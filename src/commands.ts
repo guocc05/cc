@@ -397,7 +397,7 @@ async function connectToRegistered(
     ? migrateLegacyMode(reg.permissionMode, tool)
     : getDefaultMode(tool, config)
 
-  // 断开前同步：在 killLocalSession 之前检查 session 是否漂移
+  // 断开前同步：仅对 Codex 生效（Claude 漂移由 SessionStart hook 负责）
   if (tool === 'claude' || tool === 'codex') {
     const allNames = listRegistered()
     const synced = syncDriftedSession(reg.name, reg.sessionId, reg.cwd, allNames, tool)

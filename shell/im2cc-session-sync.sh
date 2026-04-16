@@ -1,7 +1,8 @@
 #!/bin/bash
 # im2cc-session-sync.sh — Claude Code SessionStart hook
-# 当 /clear、compact 等操作创建新 session 时，自动同步 im2cc registry
-# 注意：Plan 模式切换不触发 SessionStart hook，由"断开前同步"机制覆盖
+# 当 /clear、compact、resume 等操作创建/复用 session 时，自动同步 im2cc registry
+# 注意：Plan 模式 ExitPlan 在当前 Claude 版本已不再创建新 session（2026-04-17 实测验证），
+# 所以 Plan 模式不需要额外覆盖机制；本 hook 已覆盖所有真正会漂移的 case
 #
 # @input:    Claude Code hook JSON (stdin): session_id, cwd, transcript_path, source
 # @output:   更新 ~/.im2cc/data/registry.json（如 session ID 发生变化）+ 日志

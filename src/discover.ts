@@ -1,7 +1,12 @@
 /**
- * @input:    ~/.claude/projects/ 下的 session JSONL 文件, ~/.codex/sessions/ 下的 rollout JSONL 文件, tmux 活跃 pane 文本
- * @output:   discoverSessions(), pathToSlug(), syncDriftedSession() — 扫描本地对话 + 路径转 slug + 断开前漂移同步
+ * @input:    ~/.codex/sessions/ 下的 rollout JSONL 文件, tmux 活跃 pane 文本
+ * @output:   discoverSessions(), pathToSlug(), syncDriftedSession() — 扫描本地对话 + 路径转 slug + Codex 漂移同步
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
+ *
+ * Claude 分支不再做漂移同步（2026-04-17 下线）：
+ * - 当前 Claude Code 版本下，Plan 模式 ExitPlan 不再创建新 session，实测验证过
+ * - /clear、compact 等真正会漂移的 case 由 SessionStart hook 覆盖
+ * - 基于文件 mtime 的启发式会把 SparkChat fork 误判为漂移目标（因 fork 的 jsonl 也写在同一 slug 目录且 mtime 新），导致主对话被 fork 身份替换
  */
 
 import fs from 'node:fs'
@@ -283,9 +288,10 @@ export async function findSession(
 }
 
 /**
- * 断开前同步：检查 tmux 中实际运行的 session 是否与 registry 一致。
- * 如果发现漂移（Plan 模式等），自动更新 registry 并返回新 sessionId。
- * 返回 null 表示无漂移或无法确定归属。
+ * 漂移同步（仅对 Codex 生效）：检查 tmux 中实际运行的 session 是否与 registry 一致。
+ * 如果发现漂移，自动更新 registry 并返回新 sessionId；返回 null 表示无漂移或无法确定归属。
+ *
+ * Claude 分支已下线（2026-04-17）——见文件头注释。所有 Claude 漂移 case 交给 SessionStart hook。
  */
 export function syncDriftedSession(
   name: string,
@@ -297,82 +303,7 @@ export function syncDriftedSession(
   if (tool === 'codex') {
     return syncDriftedCodexSession(name, registeredSessionId, cwd, activeNames)
   }
-
-  const slug = pathToSlug(cwd)
-  const slugDir = path.join(os.homedir(), '.claude', 'projects', slug)
-
-  if (!fs.existsSync(slugDir)) return null
-
-  // 扫描 slug 目录下的 .jsonl 文件，按 mtime 排序
-  let files: { sessionId: string; mtime: number }[]
-  try {
-    files = fs.readdirSync(slugDir)
-      .filter(f => f.endsWith('.jsonl'))
-      .map(f => {
-        const stat = fs.statSync(path.join(slugDir, f))
-        return { sessionId: f.replace('.jsonl', ''), mtime: stat.mtimeMs }
-      })
-      .sort((a, b) => b.mtime - a.mtime)
-  } catch { return null }
-
-  if (files.length === 0) return null
-
-  const newest = files[0]
-
-  // 没有漂移
-  if (newest.sessionId === registeredSessionId) return null
-
-  // 检查最新文件是否有 im2cc:<name> 标题（强归属信号）
-  const newestPath = path.join(slugDir, `${newest.sessionId}.jsonl`)
-  const titleMatch = checkSessionTitle(newestPath, name)
-
-  if (titleMatch) {
-    log(`[sync-drift] strong match: ${name} ${registeredSessionId.slice(0, 8)} → ${newest.sessionId.slice(0, 8)} (title im2cc:${name})`)
-    return newest.sessionId
-  }
-
-  // 无标题匹配——检查此项目是否只有一个活跃的 claude name
-  const sameProjectClaudeNames = activeNames.filter(
-    n => n.cwd === cwd && (n.tool ?? 'claude') === 'claude'
-  )
-
-  if (sameProjectClaudeNames.length === 1) {
-    // 同项目只有一个 claude name，安全地自动更新
-    log(`[sync-drift] single-name match: ${name} ${registeredSessionId.slice(0, 8)} → ${newest.sessionId.slice(0, 8)} (only claude name in project)`)
-    return newest.sessionId
-  }
-
-  // 多 name 且无标题匹配——不自动更新，记录日志
-  log(`[sync-drift] ambiguous: ${name} has ${sameProjectClaudeNames.length} claude names in same project, newest=${newest.sessionId.slice(0, 8)}, skipping auto-sync`)
   return null
-}
-
-/** 检查 session 文件头部是否包含 im2cc:<name> 标题（结构化 JSON 解析，避免 JSON 空格/字段顺序差异导致漏匹配） */
-function checkSessionTitle(filePath: string, name: string): boolean {
-  let fd = -1
-  try {
-    // 只读头部（前 50KB 足以覆盖 title 行）
-    fd = fs.openSync(filePath, 'r')
-    const buf = Buffer.alloc(50 * 1024)
-    const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0)
-    const head = buf.toString('utf-8', 0, bytesRead)
-    const target = `im2cc:${name}`
-    // 按行 JSON.parse：只对含特征字符串的行解析，避免全文件 parse 开销
-    for (const line of head.split('\n')) {
-      if (!(line.includes('customTitle') || line.includes('agentName'))) continue
-      try {
-        const obj = JSON.parse(line) as Record<string, unknown>
-        if (obj.customTitle === target || obj.agentName === target) return true
-      } catch { /* 残行/非 JSON 跳过 */ }
-    }
-    return false
-  } catch {
-    return false
-  } finally {
-    if (fd >= 0) {
-      try { fs.closeSync(fd) } catch { /* 忽略 */ }
-    }
-  }
 }
 
 interface CodexSessionCandidate {

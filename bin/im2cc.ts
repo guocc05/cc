@@ -937,7 +937,7 @@ async function cmdConnect(): Promise<void> {
     console.log('')
   }
 
-  // 断开前同步：检查 session 是否漂移（Plan 模式等）
+  // 断开前同步：仅对 Codex 生效（Claude 漂移由 SessionStart hook 负责）
   if (tool === 'claude' || tool === 'codex') {
     const allNames = listRegistered()
     const synced = syncDriftedSession(session.name, session.sessionId, session.cwd, allNames, tool as ToolId)
