@@ -1,6 +1,6 @@
 /**
- * @input:    用户消息, Claude 驱动, Session 绑定, TaskTimeouts（idle + hardMax 双轨超时）
- * @output:   enqueue(), handleStop(), getQueueStatus(), recoverOnStartup(), listInflightTasksForSession(), TaskTimeouts — 消息队列、Job 管理、持久化恢复、桌面接回保护态快照
+ * @input:    用户消息, Claude 驱动, Session 绑定
+ * @output:   enqueue(), handleStop(), getQueueStatus(), recoverOnStartup(), listInflightTasksForSession() — 消息队列、Job 管理、持久化恢复、桌面接回保护态快照
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -29,16 +29,6 @@ interface GroupState {
   state: JobState
   currentChild: ChildProcess | null
   queue: QueuedMessage[]
-  /** 空闲超时：N 秒无流式输出则中断。每轮 onTurnText 会重置。 */
-  idleTimer: NodeJS.Timeout | null
-  /** 绝对时长上限：到期必杀，不依赖输出。禁用时为 null。 */
-  hardMaxTimer: NodeJS.Timeout | null
-}
-
-/** 任务超时配置：idle = 空闲保护，hardMax = 绝对兜底（0 = 禁用）。 */
-export interface TaskTimeouts {
-  idleSeconds: number
-  hardMaxSeconds: number
 }
 
 // --- 持久化：pending 队列 ---
@@ -281,7 +271,7 @@ const groups = new Map<string, GroupState>()
 function getGroup(conversationId: string): GroupState {
   let g = groups.get(conversationId)
   if (!g) {
-    g = { state: 'idle', currentChild: null, queue: [], idleTimer: null, hardMaxTimer: null }
+    g = { state: 'idle', currentChild: null, queue: [] }
     groups.set(conversationId, g)
   }
   return g
@@ -313,8 +303,6 @@ function catchProcessError(conversationId: string, label: string): (err: unknown
     // 防止 group state 卡死：如果仍然 busy，重置为 idle
     const g = groups.get(conversationId)
     if (g && g.state !== 'idle') {
-      if (g.idleTimer) { clearTimeout(g.idleTimer); g.idleTimer = null }
-      if (g.hardMaxTimer) { clearTimeout(g.hardMaxTimer); g.hardMaxTimer = null }
       g.currentChild = null
       g.state = 'idle'
       log(`[queue] ${conversationId} state 已被重置为 idle`)
@@ -327,7 +315,6 @@ export function enqueue(
   conversationId: string,
   text: string,
   sendReply: (text: string) => Promise<void>,
-  timeouts: TaskTimeouts,
 ): void {
   const group = getGroup(conversationId)
   const binding = getBinding(conversationId)
@@ -354,7 +341,7 @@ export function enqueue(
 
   // 如果空闲，立即处理
   if (group.state === 'idle') {
-    processNext(conversationId, sendReply, timeouts)
+    processNext(conversationId, sendReply)
       .catch(catchProcessError(conversationId, 'processNext(enqueue-idle)'))
   }
 
@@ -374,7 +361,6 @@ export function enqueue(
 async function processNext(
   conversationId: string,
   sendReply: (text: string) => Promise<void>,
-  timeouts: TaskTimeouts,
 ): Promise<void> {
   const group = getGroup(conversationId)
   const msg = group.queue.shift()
@@ -388,7 +374,7 @@ async function processNext(
   const binding = getBinding(conversationId)
   if (!binding) {
     msg.reject(new Error('该群未接入对话，请先 /fc <名称> 或 /fn <名称>'))
-    processNext(conversationId, sendReply, timeouts)
+    processNext(conversationId, sendReply)
       .catch(catchProcessError(conversationId, 'processNext(no-binding)'))
     return
   }
@@ -400,39 +386,6 @@ async function processNext(
   // 创建 inflight 记录
   const inflight = createInflight(conversationId, binding.sessionId, msg.text)
   const outputFile = path.join(getInflightDir(), inflight.outputFile)
-
-  // --- 超时机制：双轨制 ---
-  // idle：N 秒无流式输出视为卡死，每轮 onTurnText 重置。默认 600s。
-  // hardMax：绝对时长封顶，到时必杀。0 = 不启用，允许超长任务。
-  const idleSec = Math.max(1, Math.floor(timeouts.idleSeconds))
-  const hardMaxSec = Math.max(0, Math.floor(timeouts.hardMaxSeconds))
-
-  const triggerInterrupt = (reason: 'idle' | 'hardMax'): void => {
-    if (group.state !== 'busy' || !group.currentChild) return
-    if (reason === 'idle') {
-      log(`[${conversationId}] 空闲超时 (${idleSec}s 无输出)，中断`)
-      msg.reject(new Error(
-        `⏱ 长时间无输出（${formatDuration(idleSec)}），判定卡死已中断。\n`
-        + `若是正常长任务，请在 ~/.im2cc/config.json 中增大 defaultIdleTimeoutSeconds。`,
-      ))
-    } else {
-      log(`[${conversationId}] 达到绝对时长上限 (${hardMaxSec}s)，中断`)
-      msg.reject(new Error(`⏱ 已达绝对执行上限（${formatDuration(hardMaxSec)}），强制中断`))
-    }
-    // handleStop 是 async 裸调用：reject 会变成 unhandledRejection，必须接住
-    handleStop(conversationId)
-      .catch(err => error(`[queue] handleStop 异常 [${conversationId}]: ${err}`))
-  }
-
-  const resetIdleTimer = (): void => {
-    if (group.idleTimer) clearTimeout(group.idleTimer)
-    group.idleTimer = setTimeout(() => triggerInterrupt('idle'), idleSec * 1000)
-  }
-
-  resetIdleTimer()
-  if (hardMaxSec > 0) {
-    group.hardMaxTimer = setTimeout(() => triggerInterrupt('hardMax'), hardMaxSec * 1000)
-  }
 
   let streamed = false
   let completionStatus: CompletedInflightStatus = 'completed'
@@ -451,9 +404,7 @@ async function processNext(
         },
         outputFile,
         onTurnText: (text) => {
-          // 每轮 assistant 文字就绪后立即发到 IM，并刷新 idle 计时器（"心跳"）
           streamed = true
-          resetIdleTimer()
           sendQueuedReplyIfAttached(msg, formatOutput(text, binding.sessionId, binding.transport, binding.tool))
             .catch(err => error(`[queue] 流式回复发送失败 [${conversationId}]: ${err}`))
         },
@@ -473,26 +424,14 @@ async function processNext(
     const outputText = readOutputText(outputFile)
     saveCompletedInflightSnapshot(inflight, completionStatus, outputText || completionPreview)
     cleanupInflight(inflight.id)
-    if (group.idleTimer) { clearTimeout(group.idleTimer); group.idleTimer = null }
-    if (group.hardMaxTimer) { clearTimeout(group.hardMaxTimer); group.hardMaxTimer = null }
     group.currentChild = null
     group.state = 'idle'
     // 继续处理队列
     if (group.queue.length > 0) {
-      processNext(conversationId, sendReply, timeouts)
+      processNext(conversationId, sendReply)
         .catch(catchProcessError(conversationId, 'processNext(drain)'))
     }
   }
-}
-
-/** 将秒数格式化为人类可读时长（用于超时提示文案） */
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${seconds}秒`
-  const mins = Math.floor(seconds / 60)
-  if (mins < 60) return `${mins}分钟`
-  const hrs = Math.floor(mins / 60)
-  const rem = mins % 60
-  return rem === 0 ? `${hrs}小时` : `${hrs}小时${rem}分钟`
 }
 
 /** /stop — 中断当前任务（控制面，不入队列） */
@@ -519,7 +458,6 @@ export function getQueueStatus(conversationId: string): { state: JobState; queue
 export async function recoverOnStartup(
   sendToGroup: (conversationId: string, text: string) => Promise<void>,
   makeSendReply: (conversationId: string) => (text: string) => Promise<void>,
-  timeouts: TaskTimeouts,
 ): Promise<void> {
   // 1. 恢复 inflight 任务的结果
   const dir = getInflightDir()
@@ -574,7 +512,7 @@ export async function recoverOnStartup(
     log(`[recovery] 恢复 ${pending.length} 条待处理消息`)
     clearPending()
     for (const entry of pending) {
-      enqueue(entry.conversationId, entry.text, makeSendReply(entry.conversationId), timeouts)
+      enqueue(entry.conversationId, entry.text, makeSendReply(entry.conversationId))
     }
   }
 }

@@ -23,17 +23,6 @@ export interface Im2ccConfig {
   allowedUserIds: string[]    // 空数组 = 允许所有人（不推荐）
   defaultPermissionMode: string // 旧字段，保留兼容：YOLO | default | auto-edit
   defaultModes: Record<string, string> // per-tool 默认模式 { claude: 'bypassPermissions', codex: 'bypass', ... }
-  /**
-   * 空闲超时（秒）：多久没有流式输出即判定卡死并中断。默认 600 (10 分钟)。
-   * 每次 assistant 轮次输出（onTurnText）都会重置此计时器 — 正常运行任务不受影响。
-   */
-  defaultIdleTimeoutSeconds: number
-  /**
-   * 绝对执行上限（秒）：无论是否还在输出，到时必杀。0 = 不启用（允许任意长任务）。
-   */
-  defaultHardMaxSeconds: number
-  /** @deprecated 旧字段名，语义为挂钟超时。若设置，启动时迁移到 defaultIdleTimeoutSeconds。 */
-  defaultTimeoutSeconds?: number
   recapBudget: number           // /fc 时上下文回顾的字符预算，0 = 禁用
   maxFileSizeMB: number         // 文件传输最大体积，默认 10
   inboxTtlMinutes: number       // inbox 文件过期时间，默认 60
@@ -58,8 +47,6 @@ const DEFAULT_CONFIG: Im2ccConfig = {
   allowedUserIds: [],
   defaultPermissionMode: 'default',
   defaultModes: {},  // 空 = 使用 mode-policy 内置默认
-  defaultIdleTimeoutSeconds: 600,
-  defaultHardMaxSeconds: 0,
   recapBudget: 2000,
   maxFileSizeMB: 10,
   inboxTtlMinutes: 60,
@@ -88,11 +75,6 @@ export function loadConfig(): Im2ccConfig {
       ...DEFAULT_CONFIG.feishu,
       ...parsed.feishu,
     },
-  }
-  // 旧字段迁移：defaultTimeoutSeconds（挂钟超时）→ defaultIdleTimeoutSeconds（空闲超时）。
-  // 仅当用户显式写过旧字段且没有写新字段时才迁移，保留原数值不改变行为预期。
-  if (parsed.defaultTimeoutSeconds !== undefined && parsed.defaultIdleTimeoutSeconds === undefined) {
-    merged.defaultIdleTimeoutSeconds = parsed.defaultTimeoutSeconds
   }
   return merged
 }

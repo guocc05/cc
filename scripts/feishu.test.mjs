@@ -12,8 +12,6 @@ function makeConfig() {
     allowedUserIds: [],
     defaultPermissionMode: 'default',
     defaultModes: {},
-    defaultIdleTimeoutSeconds: 600,
-    defaultHardMaxSeconds: 0,
     recapBudget: 2000,
     maxFileSizeMB: 10,
     inboxTtlMinutes: 60,
