@@ -13,6 +13,8 @@ const commands = await import(path.join(rootDir, 'dist', 'src', 'commands.js'))
 const configMod = await import(path.join(rootDir, 'dist', 'src', 'config.js'))
 const registry = await import(path.join(rootDir, 'dist', 'src', 'registry.js'))
 const session = await import(path.join(rootDir, 'dist', 'src', 'session.js'))
+// 强制加载 driver 模块触发 registerDriver（测试需要 hasDriver('claude') === true）
+await import(path.join(rootDir, 'dist', 'src', 'claude-driver.js'))
 
 function resetState() {
   fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
@@ -323,4 +325,43 @@ test('/fn with unknown short name suggests similar names and offers full-path es
   assert.match(out, /在电脑端 fn <名称> 先创建一个对话/)
   assert.match(out, /在这里用完整路径.*~\/Code\/im2ccx/)
   assert.match(out, /已用过的项目列表：\/ls/)
+})
+
+test('/fn with claudeLauncher but no imDefaultClaudeProfile is rejected with guidance', async () => {
+  resetState()
+  const config = {
+    ...configForTests(),
+    claudeLauncher: '~/fake-launcher.sh',
+    imDefaultClaudeProfile: '',
+  }
+  configMod.saveConfig(config)
+
+  registerSession('existing', 'im2cc', 'claude', 'conv-unused')
+
+  const fnCmd = commands.parseCommand('/fn newsess im2cc')
+  const reply = await commands.handleCommand(fnCmd, 'conv-launcher-reject', config)
+  const out = replyText(reply)
+  assert.match(out, /❌ 当前机器已启用本地 Claude 渠道选择器/)
+  assert.match(out, /imDefaultClaudeProfile/)
+  assert.match(out, /--tool codex/)
+})
+
+test('/fn with claudeLauncher and imDefaultClaudeProfile set does not reject (passes profile through)', async () => {
+  resetState()
+  const config = {
+    ...configForTests(),
+    claudeLauncher: '~/fake-launcher.sh',
+    imDefaultClaudeProfile: 'official',
+  }
+  configMod.saveConfig(config)
+
+  registerSession('existing', 'im2cc', 'claude', 'conv-unused-2')
+
+  const fnCmd = commands.parseCommand('/fn newsess im2cc')
+  const reply = await commands.handleCommand(fnCmd, 'conv-launcher-pass', config)
+  const out = replyText(reply)
+  // 核心断言：不再出现"拒绝"文案；真正的 createSession 会因 fake-launcher 不存在而失败，
+  // 所以我们只验证"放行到 driver 层"这个路径
+  assert.doesNotMatch(out, /❌ 当前机器已启用本地 Claude 渠道选择器/)
+  assert.doesNotMatch(out, /imDefaultClaudeProfile/)
 })

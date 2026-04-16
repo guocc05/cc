@@ -122,32 +122,50 @@ async function handleFn(args: string, conversationId: string, config: Im2ccConfi
   const validation = validatePath(outcome.cwd!)
   if (!validation.valid) return renderFnProjectNotFound(projectHint)
 
-  // 检查 driver 是否可用
+  // 检查 driver 是否注册
   if (!hasDriver(tool)) {
     return `❌ 工具 "${tool}" 未注册\n当前可用: ${supportedToolList()}`
   }
+
+  // IM 端没有 TTY，无法弹渠道菜单。两种处理：
+  //   - 配了 imDefaultClaudeProfile：用该 profile 非交互启动（launcher 读 IM2CC_CLAUDE_PROFILE 跳过选择）
+  //   - 没配：保守拒绝，提示用户去电脑端创建或配置默认 profile
+  // 这个检查放在 isAvailable 之前：launcher 存在本身说明用户期望用 claude，
+  // 产品规则问题优先于环境问题反馈
+  let claudeProfile: string | undefined
+  if (tool === 'claude' && hasCustomClaudeLauncher(config)) {
+    const imDefault = config.imDefaultClaudeProfile?.trim()
+    if (!imDefault) {
+      return [
+        '❌ 当前机器已启用本地 Claude 渠道选择器，IM 端没有 TTY 无法弹菜单。',
+        '',
+        '两种解决方式：',
+        '  ① 在电脑端配置一个 IM 默认渠道：打开 ~/.im2cc/config.json 加上',
+        '       "imDefaultClaudeProfile": "official"',
+        '     之后 IM 端 /fn 会用该 profile 非交互启动。',
+        '  ② 回电脑终端运行 fn <名称>（可交互选渠道）。',
+        '',
+        '或在 IM 端改用 Codex / Gemini：',
+        '  /fn <名称> <项目目录> --tool codex',
+      ].join('\n')
+    }
+    claudeProfile = imDefault
+  }
+
   const driver = getDriver(tool)
   if (!driver.isAvailable()) {
     return `❌ ${tool} 未安装或不可用\n请先安装 ${tool} CLI`
   }
 
-  if (tool === 'claude' && hasCustomClaudeLauncher(config)) {
-    return [
-      '❌ 当前机器已启用本地 Claude 渠道选择器，不能在 IM 端直接创建 Claude 对话。',
-      '请回到电脑终端运行 fn <名称> 创建，这样才能先选择渠道。',
-      '如果要在 IM 端创建，请改用 /fn <名称> <项目目录> --tool codex 或 --tool gemini。',
-    ].join('\n')
-  }
-
-  log(`[${conversationId}] 创建新对话 "${sessionName}" [${tool}] → ${validation.resolvedPath}`)
+  log(`[${conversationId}] 创建新对话 "${sessionName}" [${tool}] → ${validation.resolvedPath}${claudeProfile ? ` [profile=${claudeProfile}]` : ''}`)
 
   try {
     const cliVersion = driver.getVersion()
     const defaultMode = getDefaultMode(tool, config)
-    const { sessionId } = await driver.createSession(validation.resolvedPath, defaultMode, sessionName)
+    const { sessionId } = await driver.createSession(validation.resolvedPath, defaultMode, sessionName, { claudeProfile })
 
-    // 持久化 permissionMode 到 registry（P1-1 修复 /mode 丢失）
-    registerWithMeta(sessionName, sessionId, validation.resolvedPath, tool, { permissionMode: defaultMode })
+    // 持久化 permissionMode + claudeProfile 到 registry（/fc 接入时 launcher 能复用）
+    registerWithMeta(sessionName, sessionId, validation.resolvedPath, tool, { permissionMode: defaultMode, claudeProfile })
 
     const binding = createBinding(conversationId, sessionId, validation.resolvedPath, defaultMode, cliVersion, transport, tool)
     const supportNote = isBestEffortTool(tool) ? '\n⚠️ Gemini 为 best-effort 支持' : ''

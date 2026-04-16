@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数), ~/.im2cc/wechat-account.json
+ * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile), ~/.im2cc/wechat-account.json
  * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -14,6 +14,12 @@ export interface Im2ccConfig {
     appSecret: string
   }
   claudeLauncher: string       // 可选：本地 Claude 启动器路径；为空时直接调用 claude
+  /**
+   * 可选：IM 端创建 Claude 对话时使用的默认 profile 名。
+   * 仅在配置了 claudeLauncher 时生效 — 告诉 launcher 非交互启动（IM 端没有 TTY 无法弹菜单）。
+   * 留空 = IM 端拒绝创建 Claude 对话（保留保守行为，与旧版一致）。
+   */
+  imDefaultClaudeProfile: string
   allowedUserIds: string[]    // 空数组 = 允许所有人（不推荐）
   defaultPermissionMode: string // 旧字段，保留兼容：YOLO | default | auto-edit
   defaultModes: Record<string, string> // per-tool 默认模式 { claude: 'bypassPermissions', codex: 'bypass', ... }
@@ -48,6 +54,7 @@ const ANTI_POMODORO_FILE = path.join(DATA_DIR, 'anti-pomodoro.json')
 const DEFAULT_CONFIG: Im2ccConfig = {
   feishu: { appId: '', appSecret: '' },
   claudeLauncher: '',
+  imDefaultClaudeProfile: '',
   allowedUserIds: [],
   defaultPermissionMode: 'default',
   defaultModes: {},  // 空 = 使用 mode-policy 内置默认

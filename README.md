@@ -243,7 +243,16 @@ im2cc doctor
 - 仅你的本机会改为调用这个脚本；未配置该项的用户行为完全不变。
 - 电脑终端里的 `fn <名称>` 会先让你选择 profile，再创建 Claude 对话。
 - 同一个 session 后续的发送、恢复也会沿用这次选择的 profile。
-- 飞书/微信里的 `/fn` 在该模式下不会为 Claude 弹菜单，因为后台没有 TTY；如需选 profile，请先回电脑执行 `fn`，或在 IM 里直接创建 `codex` / `gemini` 会话。
+- 飞书/微信里的 `/fn` 默认会被拒绝（IM 端没有 TTY 无法弹菜单）。如果希望 IM 端也能创建 Claude 对话，可以再加一项：
+
+  ```json
+  {
+    "claudeLauncher": "~/claude-start.sh",
+    "imDefaultClaudeProfile": "official"
+  }
+  ```
+
+  `imDefaultClaudeProfile` 指定 IM 端非交互启动时使用的 profile（你的 launcher 会通过 `IM2CC_CLAUDE_PROFILE` 环境变量收到这个值，跳过菜单直接用）。电脑终端的交互行为不受影响。
 
 ## 安全与隐私
 
