@@ -19,7 +19,7 @@ test('cli help reflects focused support matrix', () => {
   assert.match(stdout, /Tool: Claude Code \/ Codex/)
   assert.match(stdout, /Best-effort: Gemini/)
   assert.match(stdout, /onboard\s+查看首次安装与 post-success 引导/)
-  assert.match(stdout, /secure\s+配置用户白名单和路径白名单/)
+  assert.match(stdout, /secure\s+配置允许使用 IM Bot 的用户白名单/)
   assert.match(stdout, /update\s+更新到最新版本/)
   assert.doesNotMatch(stdout, /Telegram/)
   assert.doesNotMatch(stdout, /钉钉/)

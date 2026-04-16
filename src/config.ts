@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/config.json (飞书凭证、白名单、默认参数), ~/.im2cc/wechat-account.json
+ * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数), ~/.im2cc/wechat-account.json
  * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -15,7 +15,6 @@ export interface Im2ccConfig {
   }
   claudeLauncher: string       // 可选：本地 Claude 启动器路径；为空时直接调用 claude
   allowedUserIds: string[]    // 空数组 = 允许所有人（不推荐）
-  pathWhitelist: string[]     // 允许绑定的目录前缀，默认 ['~/Code/']
   defaultPermissionMode: string // 旧字段，保留兼容：YOLO | default | auto-edit
   defaultModes: Record<string, string> // per-tool 默认模式 { claude: 'bypassPermissions', codex: 'bypass', ... }
   /**
@@ -50,7 +49,6 @@ const DEFAULT_CONFIG: Im2ccConfig = {
   feishu: { appId: '', appSecret: '' },
   claudeLauncher: '',
   allowedUserIds: [],
-  pathWhitelist: [path.join(os.homedir(), 'Code')],
   defaultPermissionMode: 'default',
   defaultModes: {},  // 空 = 使用 mode-policy 内置默认
   defaultIdleTimeoutSeconds: 600,

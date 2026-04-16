@@ -9,7 +9,8 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - daemon-process.ts：守护进程进程识别与 PID/锁元数据校验，供 CLI 和 daemon 共享
 - config.ts：配置加载 (~/.im2cc/config.json, ~/.im2cc/wechat-account.json)
 - support-policy.ts：正式支持 / best-effort 支持矩阵常量与公共文案
-- security.ts：用户白名单检查、路径验证与白名单（新建/接入路径共享）
+- security.ts：IM 用户白名单检查、session 名称合法性校验、路径展开与存在性校验（不再承担"安全边界"语义，访问范围由 AI 工具自身的 permission mode 决定）
+- project-index.ts：从 registry.json 派生 IM 端项目索引（listProjectIndex/resolveProjectHint/suggestProjectLabels/prettyPath），用于 /ls 与 /fn 短名称解析
 - mode-policy.ts：模式注册表 — 每个工具的可用模式、中文描述、CLI 参数映射、默认模式、旧名迁移
 - claude-launcher.ts：Claude 本地启动器覆盖（可选 launcher 解析、profile 选择、环境变量透传）
 - tool-cli-args.ts：各工具交互式 CLI 参数映射（tmux create/resume + resume hint）
@@ -23,7 +24,7 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - codex-driver.ts：Codex CLI 驱动（thread_id 创建、resume、输出解析）
 - gemini-driver.ts：Gemini CLI 驱动（best-effort，session_id 创建、resume、输出解析）
 - queue.ts：消息队列（per-group FIFO）、Job 三态管理、双轨超时（idle 空闲检测 + hardMax 绝对上限，onTurnText 刷新 idle 计时器）、控制面分离；绑定切换后的旧结果丢弃、startup recovery 送达校验、本地接回电脑时的 inflight 中断，以及 handoff 保护态所需的 inflight / completed snapshot 查询
-- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径复检、/fn 教学卡片、/ls 工作区项目目录列表、/fn 项目名模糊匹配建议）
+- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径存在性复检、/fn 教学卡片、/ls 展示 registry 派生的已用项目、/fn 项目短名解析 + 模糊匹配建议 + 全新路径兜底）
 - status.ts：会话状态面板构建（/fs 和 /fc 共用），含 context token、git 分支、Anthropic 配额
 - output.ts：stream-json 事件 → 飞书消息文本格式化
 - registry.ts：命名 session 注册表（register/lookup/list/remove，永久寻址）

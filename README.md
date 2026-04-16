@@ -145,10 +145,9 @@ launchctl load ~/Library/LaunchAgents/com.im2cc.daemon.plist
 im2cc secure
 ```
 
-`im2cc secure` 会让你补齐两类配置：
+`im2cc secure` 会让你配置：
 
-- **用户白名单**：哪些 IM 用户可以给 bot 发控制命令
-- **路径白名单**：哪些项目目录允许被绑定和操作
+- **IM 用户白名单**：哪些 IM 用户可以给 bot 发控制命令（这是 im2cc 真正的认证边界）
 
 ### Phase 3: Learn More
 
@@ -198,7 +197,7 @@ im2cc doctor
 | **fd** | 断开当前对话 | `fd` | `/fd` |
 | **fs** | 查看当前对话状态 | `fs auth` | `/fs` |
 | `im2cc onboard` | 查看首次安装引导 | `im2cc onboard` | — |
-| `im2cc secure` | 配置白名单 | `im2cc secure` | — |
+| `im2cc secure` | 配置 IM 用户白名单 | `im2cc secure` | — |
 | `/mode` | 查看可用模式 | — | `/mode` |
 | `/mode <模式别名>` | 切换权限模式 | — | `/mode au` |
 | `/stop` | 中断执行中的任务 | — | `/stop` |
@@ -250,15 +249,16 @@ im2cc doctor
 
 im2cc 完全在你自己的电脑上运行，你的代码和对话内容不会经过任何第三方服务器。飞书和微信仅用于传递消息文本。
 
-你可以进一步控制访问权限：
+### 安全模型
 
-- **用户白名单**：限制哪些 IM 用户可以发控制命令
-- **项目白名单**：限制 AI coding tool 只能操作哪些目录下的项目（默认 `~/Code/`）
-- **权限模式**：默认是 `default`，需要确认才执行；你可以在 IM 中用 `/mode` 临时切换
+im2cc 把 IM 消息等效于本地终端命令，因此有两层保护：
 
-建议在完成第一次真实会话流转后，立刻运行一次 `im2cc secure`。
+1. **谁能用（认证层）**：`allowedUserIds`（IM 用户白名单）限制只有你自己能发指令给 Bot——这是 im2cc 真正的认证边界，`im2cc secure` 配置。
+2. **AI 能做什么（授权层）**：由各 AI 工具自身的 permission mode 决定。YOLO/bypassPermissions 模式下 AI 对文件系统无限制；auto/acceptEdits 模式下工具层会弹确认。
 
-首次使用更建议先用只有你自己的飞书群或微信会话验证完整链路。
+**重要**：im2cc 不做"路径白名单"式的沙箱——AI 启动后可用绝对路径访问机器上任意文件，路径限制给不了真正的安全保护。如果你用的是 YOLO/bypass 模式，请务必设置 `allowedUserIds` 并把 Bot 放在只有你自己能访问的 IM 会话里。
+
+首次使用建议先用只有你自己的飞书群或微信会话验证完整链路。
 
 ## 常见问题
 
@@ -285,7 +285,7 @@ im2cc stop               # 停止
 im2cc status             # 查看状态
 im2cc logs               # 查看日志
 im2cc onboard            # 首次安装引导
-im2cc secure             # 配置白名单
+im2cc secure             # 配置 IM 用户白名单
 im2cc doctor             # 环境检查
 im2cc install-shell      # 写入 fn/fc/fl 终端命令
 im2cc install-hook       # 写入 Claude Code session 同步 hook

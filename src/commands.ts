@@ -4,12 +4,17 @@
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
-import os from 'node:os'
 import path from 'node:path'
 import type { Im2ccConfig } from './config.js'
 import type { OutgoingMessage, TransportType } from './transport.js'
 import { textMessage } from './message-format.js'
-import { validatePath, resolvePath, listProjects, isValidSessionName } from './security.js'
+import { validatePath, isValidSessionName } from './security.js'
+import {
+  listProjectIndex,
+  resolveProjectHint,
+  suggestProjectLabels,
+  prettyPath,
+} from './project-index.js'
 import { createBinding, getBinding, archiveBinding, archiveBindingsBySession, updateBinding, type Binding } from './session.js'
 import { getDriver, hasDriver, type ToolId } from './tool-driver.js'
 import { handleStop, getQueueStatus } from './queue.js'
@@ -33,12 +38,12 @@ export interface ParsedCommand {
   args: string
 }
 
-function validateSessionProjectPath(rawPath: string, config: Im2ccConfig): { ok: true, resolvedPath: string } | { ok: false, message: string } {
-  const validation = validatePath(rawPath, config)
+function validateSessionProjectPath(rawPath: string): { ok: true, resolvedPath: string } | { ok: false, message: string } {
+  const validation = validatePath(rawPath)
   if (!validation.valid) {
     return {
       ok: false,
-      message: `❌ ${validation.error}\n如需继续，请先调整工作区（路径白名单）后再接入这个对话。`,
+      message: `❌ ${validation.error}\n项目目录可能已被移动或删除，请检查后重试。`,
     }
   }
   return { ok: true, resolvedPath: validation.resolvedPath }
@@ -65,7 +70,7 @@ export async function handleCommand(
     case 'fn': return handleFn(cmd.args, conversationId, config, transport)
     case 'fc': return handleFc(cmd.args, conversationId, config, transport)
     case 'fl': return handleFl()
-    case 'ls': return handleLs(config)
+    case 'ls': return handleLs()
     case 'fk': return handleFk(cmd.args, conversationId)
     case 'fs': return handleFs(conversationId)
     case 'fd': return handleFd(conversationId)
@@ -82,7 +87,7 @@ export async function handleCommand(
 
 async function handleFn(args: string, conversationId: string, config: Im2ccConfig, transport: TransportType = 'feishu'): Promise<string | OutgoingMessage> {
   if (!args) {
-    return renderFnUsage(config)
+    return renderFnUsage()
   }
 
   const existing = getBinding(conversationId)
@@ -106,14 +111,16 @@ async function handleFn(args: string, conversationId: string, config: Im2ccConfi
   }
   const projectHint = argParts[1]
   if (!projectHint) {
-    return renderFnMissingProject(config, sessionName)
+    return renderFnMissingProject(sessionName)
   }
 
   // 先验证用户的输入（项目目录是否存在），再验证环境（driver 是否可用）。
   // 输入错误比环境问题更"浅"，优先反馈给用户更符合心智顺序。
-  const resolved = resolvePath(projectHint, config)
-  const validation = validatePath(resolved, config)
-  if (!validation.valid) return renderFnProjectNotFound(config, projectHint)
+  const outcome = resolveProjectHint(projectHint)
+  if (outcome.kind === 'not_found') return renderFnProjectNotFound(projectHint)
+  if (outcome.kind === 'ambiguous') return renderFnProjectAmbiguous(projectHint, outcome.matches ?? [])
+  const validation = validatePath(outcome.cwd!)
+  if (!validation.valid) return renderFnProjectNotFound(projectHint)
 
   // 检查 driver 是否可用
   if (!hasDriver(tool)) {
@@ -158,115 +165,93 @@ async function handleFn(args: string, conversationId: string, config: Im2ccConfi
   }
 }
 
-/** 将绝对路径折回 ~ 形式展示，更易读 */
-function prettyPath(p: string): string {
-  const home = os.homedir()
-  return p === home ? '~' : p.startsWith(home + path.sep) ? '~' + p.slice(home.length) : p
-}
-
-function formatWorkspaces(config: Im2ccConfig): string {
-  return config.pathWhitelist.map(prettyPath).join(', ')
-}
-
-/** 简化 Levenshtein，用于项目名模糊匹配 */
-function levenshtein(a: string, b: string): number {
-  const m = a.length
-  const n = b.length
-  if (m === 0) return n
-  if (n === 0) return m
-  const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0))
-  for (let i = 0; i <= m; i++) dp[i][0] = i
-  for (let j = 0; j <= n; j++) dp[0][j] = j
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      const cost = a[i - 1] === b[j - 1] ? 0 : 1
-      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost)
-    }
-  }
-  return dp[m][n]
-}
-
-function fuzzyMatchProjects(query: string, projects: string[], max = 3): string[] {
-  const q = query.toLowerCase()
-  return projects
-    .map(name => ({ name, dist: levenshtein(q, name.toLowerCase()) }))
-    .filter(({ name, dist }) => dist <= Math.max(2, Math.floor(name.length / 2)))
-    .sort((a, b) => a.dist - b.dist)
-    .slice(0, max)
-    .map(({ name }) => name)
-}
-
-/** /fn 无参：教用户怎么用，不再一次性倾倒全部项目 */
-function renderFnUsage(config: Im2ccConfig): OutgoingMessage {
+/** /fn 无参：教用户怎么用 */
+function renderFnUsage(): OutgoingMessage {
   const lines = [
     '📝 创建新对话',
     '',
-    '用法：/fn <对话名> <项目目录>',
+    '用法：/fn <对话名> <项目短名 | 完整路径>',
     '示例：/fn auth im2cc',
+    '     /fn exp ~/Downloads/new-repo',
     '',
     '对话名　：给这次对话起的标签，以后用 /fc <对话名> 可以重连',
-    '项目目录：告诉 AI 去哪个目录工作——AI 会以这个目录为根，',
-    '          读写其中的代码、执行命令',
+    '项目目录：短名=之前在电脑端用过的项目（/ls 可查看）；',
+    '          全新项目请用完整路径（如 ~/Code/foo）',
     '',
-    `查看全部项目目录：/ls`,
-    `当前工作区：${formatWorkspaces(config)}`,
+    `已用过的项目：/ls`,
   ]
   return textMessage(lines.join('\n'))
 }
 
 /** /fn <对话名>：只给出创建新对话时最关键的缺项提示 */
-function renderFnMissingProject(config: Im2ccConfig, sessionName: string): OutgoingMessage {
+function renderFnMissingProject(sessionName: string): OutgoingMessage {
   const lines = [
     '📝 缺少项目目录',
     '',
-    '用法：/fn <对话名> <项目目录>',
+    '用法：/fn <对话名> <项目短名 | 完整路径>',
     `示例：/fn ${sessionName} im2cc`,
+    `     /fn ${sessionName} ~/Downloads/new-repo`,
     '',
-    '项目目录：告诉 AI 去哪个目录工作——AI 会以这个目录为根，',
-    '          读写其中的代码、执行命令',
+    '项目目录：短名=之前在电脑端用过的项目（/ls 可查看）；',
+    '          全新项目请用完整路径',
     '',
-    `查看全部项目目录：/ls`,
-    `当前工作区：${formatWorkspaces(config)}`,
+    `已用过的项目：/ls`,
   ]
   return textMessage(lines.join('\n'))
 }
 
-/** /fn <对话名> <不存在的项目目录>：给出模糊匹配建议 */
-function renderFnProjectNotFound(config: Im2ccConfig, query: string): OutgoingMessage {
-  const projects = listProjects(config)
-  const matches = fuzzyMatchProjects(query, projects)
+/** /fn <对话名> <不存在的项目短名>：给出模糊匹配建议 */
+function renderFnProjectNotFound(query: string): OutgoingMessage {
+  const matches = suggestProjectLabels(query)
   const lines = [
-    `❌ 没找到项目目录 "${query}"`,
-    `工作区：${formatWorkspaces(config)}`,
+    `❌ 没找到项目 "${query}"`,
+    '',
+    '如果是全新项目（之前没用 im2cc 创建过对话），请：',
+    '  1. 在电脑端 fn <名称> 先创建一个对话（推荐），或',
+    `  2. 在这里用完整路径，如 /fn <对话名> ~/Code/${query}`,
   ]
   if (matches.length > 0) {
-    lines.push('', `相近的有：${matches.join(', ')}`)
+    lines.push('', `或你是不是想找：${matches.join(', ')}`)
   }
-  lines.push('', '列出全部：/ls')
+  lines.push('', '已用过的项目列表：/ls')
   return textMessage(lines.join('\n'))
 }
 
-/** /ls：列出工作区下全部项目目录，一行一个，纯文本紧凑显示 */
-function handleLs(config: Im2ccConfig): OutgoingMessage {
-  const projects = listProjects(config)
-  const workspaces = formatWorkspaces(config)
+/** /fn <对话名> <歧义短名>：短名匹配多个项目 */
+function renderFnProjectAmbiguous(
+  query: string,
+  matches: { label: string; cwd: string }[],
+): OutgoingMessage {
+  const lines = [
+    `❓ "${query}" 匹配到多个项目：`,
+    '',
+    ...matches.map(m => `  ${m.label}  (${prettyPath(m.cwd)})`),
+    '',
+    '请用更完整的名称或直接传完整路径。',
+  ]
+  return textMessage(lines.join('\n'))
+}
 
-  if (projects.length === 0) {
+/** /ls：列出用过的项目（从 registry 派生），一行一个 */
+function handleLs(): OutgoingMessage {
+  const entries = listProjectIndex()
+
+  if (entries.length === 0) {
     return textMessage([
-      '📁 工作区下还没有项目目录',
-      `工作区：${workspaces}`,
+      '📁 还没有用过任何项目',
       '',
-      '请先在工作区下创建或克隆项目，或在电脑端运行 im2cc secure 调整工作区。',
+      '请先在电脑端运行 fn <名称> 创建第一个对话。',
+      '创建后这里就能看到对应的项目，可以用短名在 IM 端 /fn 新对话。',
     ].join('\n'))
   }
 
   const lines = [
-    `📁 可用项目目录 (${projects.length})`,
-    `工作区：${workspaces}`,
+    `📁 已用过的项目 (${entries.length})`,
     '',
-    ...projects,
+    ...entries.map(e => `${e.label}  (${prettyPath(e.cwd)})`),
     '',
-    '用法：/fn <对话名> <项目目录>',
+    '用法：/fn <对话名> <项目短名>',
+    '全新项目请传完整路径，例：/fn auth ~/Code/foo',
   ]
   return textMessage(lines.join('\n'))
 }
@@ -385,7 +370,7 @@ async function connectToRegistered(
   transport: TransportType = 'feishu',
 ): Promise<string> {
   const tool = (reg.tool ?? 'claude') as ToolId
-  const pathCheck = validateSessionProjectPath(reg.cwd, config)
+  const pathCheck = validateSessionProjectPath(reg.cwd)
   if (!pathCheck.ok) return pathCheck.message
   reg = { ...reg, cwd: pathCheck.resolvedPath }
 
@@ -429,7 +414,7 @@ async function connectToDiscovered(
   config: Im2ccConfig,
   transport: TransportType = 'feishu',
 ): Promise<string> {
-  const pathCheck = validateSessionProjectPath(session.projectPath, config)
+  const pathCheck = validateSessionProjectPath(session.projectPath)
   if (!pathCheck.ok) return pathCheck.message
   const driver = getDriver('claude')  // discovered sessions 目前只支持 claude
   const cliVersion = driver.getVersion()

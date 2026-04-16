@@ -36,7 +36,6 @@ function replyText(reply) {
 function configForTests() {
   return {
     ...configMod.loadConfig(),
-    pathWhitelist: [path.join(testHome, 'Code')],
     defaultModes: {},
   }
 }
@@ -230,9 +229,6 @@ test('first-run guidance prefers computer-side creation and IM /fn requires expl
   const config = configForTests()
   configMod.saveConfig(config)
 
-  fs.mkdirSync(path.join(testHome, 'Code', 'im2cc'), { recursive: true })
-  fs.mkdirSync(path.join(testHome, 'Code', 'portal'), { recursive: true })
-
   const flCmd = commands.parseCommand('/fl')
   assert.ok(flCmd)
   const flOutput = await commands.handleCommand(flCmd, 'conv-empty', config)
@@ -246,11 +242,9 @@ test('first-run guidance prefers computer-side creation and IM /fn requires expl
   const fnReply = await commands.handleCommand(fnCmd, 'conv-empty', config)
   const fnOutput = replyText(fnReply)
   assert.match(fnOutput, /📝 缺少项目目录/)
-  assert.match(fnOutput, /用法：\/fn <对话名> <项目目录>/)
+  assert.match(fnOutput, /用法：\/fn <对话名> <项目短名 \| 完整路径>/)
   assert.match(fnOutput, /示例：\/fn demo im2cc/)
-  assert.match(fnOutput, /项目目录：告诉 AI 去哪个目录工作/)
-  assert.match(fnOutput, /查看全部项目目录：\/ls/)
-  assert.match(fnOutput, /当前工作区：~\/Code/)
+  assert.match(fnOutput, /已用过的项目：\/ls/)
 })
 
 test('/fn with no args shows usage card, not project list', async () => {
@@ -258,8 +252,9 @@ test('/fn with no args shows usage card, not project list', async () => {
   const config = configForTests()
   configMod.saveConfig(config)
 
-  fs.mkdirSync(path.join(testHome, 'Code', 'im2cc'), { recursive: true })
-  fs.mkdirSync(path.join(testHome, 'Code', 'portal'), { recursive: true })
+  // registry 里放两个用过的项目，确保 usage card 不应顺带列出它们（教学卡片聚焦语法）
+  registerSession('alpha', 'im2cc', 'claude', 'conv-ignore')
+  registerSession('beta', 'portal', 'claude', 'conv-ignore2')
 
   const fnCmd = commands.parseCommand('/fn')
   assert.ok(fnCmd)
@@ -267,40 +262,40 @@ test('/fn with no args shows usage card, not project list', async () => {
   assert.equal(reply && reply.kind, 'text', '/fn 无参应返回纯文本消息绕过 panel markdown')
   const out = replyText(reply)
   assert.match(out, /📝 创建新对话/)
-  assert.match(out, /用法：\/fn <对话名> <项目目录>/)
+  assert.match(out, /用法：\/fn <对话名> <项目短名 \| 完整路径>/)
   assert.match(out, /示例：\/fn auth im2cc/)
   assert.match(out, /对话名.*给这次对话起的标签/)
-  assert.match(out, /项目目录.*告诉 AI 去哪个目录工作/)
-  assert.match(out, /查看全部项目目录：\/ls/)
-  assert.match(out, /当前工作区：~\/Code/)
+  assert.match(out, /项目目录：短名=之前在电脑端用过的项目/)
+  assert.match(out, /已用过的项目：\/ls/)
   // 教学卡片不应当场列出项目
-  assert.doesNotMatch(out, /^im2cc$/m)
-  assert.doesNotMatch(out, /^portal$/m)
+  assert.doesNotMatch(out, /^im2cc\b/m)
+  assert.doesNotMatch(out, /^portal\b/m)
 })
 
-test('/ls lists projects one per line as plain text', async () => {
+test('/ls lists projects from registry (used projects)', async () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)
 
-  fs.mkdirSync(path.join(testHome, 'Code', 'im2cc'), { recursive: true })
-  fs.mkdirSync(path.join(testHome, 'Code', 'portal'), { recursive: true })
-  fs.mkdirSync(path.join(testHome, 'Code', 'aicam'), { recursive: true })
+  // 在 registry 里登记 3 个 session，对应 3 个不同的 cwd
+  registerSession('alpha', 'im2cc', 'claude', 'conv-ls-a')
+  registerSession('beta', 'portal', 'claude', 'conv-ls-b')
+  registerSession('gamma', 'aicam', 'codex', 'conv-ls-c')
 
   const lsCmd = commands.parseCommand('/ls')
   assert.ok(lsCmd)
   const reply = await commands.handleCommand(lsCmd, 'conv-ls', config)
-  assert.equal(reply && reply.kind, 'text', '/ls 必须返回纯文本，否则飞书会渲染成大间距列表')
+  assert.equal(reply && reply.kind, 'text', '/ls 必须返回纯文本')
   const out = replyText(reply)
-  assert.match(out, /📁 可用项目目录 \(3\)/)
-  assert.match(out, /工作区：~\/Code/)
-  assert.match(out, /^aicam$/m)
-  assert.match(out, /^im2cc$/m)
-  assert.match(out, /^portal$/m)
-  assert.match(out, /用法：\/fn <对话名> <项目目录>/)
+  assert.match(out, /📁 已用过的项目 \(3\)/)
+  assert.match(out, /im2cc\s+\(/)
+  assert.match(out, /portal\s+\(/)
+  assert.match(out, /aicam\s+\(/)
+  assert.match(out, /用法：\/fn <对话名> <项目短名>/)
+  assert.match(out, /全新项目请传完整路径/)
 })
 
-test('/ls on empty workspace explains what to do', async () => {
+test('/ls when registry is empty guides to create first session on computer', async () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)
@@ -308,22 +303,24 @@ test('/ls on empty workspace explains what to do', async () => {
   const lsCmd = commands.parseCommand('/ls')
   const reply = await commands.handleCommand(lsCmd, 'conv-ls-empty', config)
   const out = replyText(reply)
-  assert.match(out, /📁 工作区下还没有项目目录/)
-  assert.match(out, /工作区：~\/Code/)
+  assert.match(out, /📁 还没有用过任何项目/)
+  assert.match(out, /请先在电脑端运行 fn <名称>/)
 })
 
-test('/fn with unknown project suggests similar names', async () => {
+test('/fn with unknown short name suggests similar names and offers full-path escape', async () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)
 
-  fs.mkdirSync(path.join(testHome, 'Code', 'im2cc'), { recursive: true })
-  fs.mkdirSync(path.join(testHome, 'Code', 'aicam'), { recursive: true })
+  registerSession('alpha', 'im2cc', 'claude', 'conv-fn-a')
+  registerSession('beta', 'aicam', 'claude', 'conv-fn-b')
 
   const fnCmd = commands.parseCommand('/fn demo im2ccx')
   const reply = await commands.handleCommand(fnCmd, 'conv-typo', config)
   const out = replyText(reply)
-  assert.match(out, /❌ 没找到项目目录 "im2ccx"/)
-  assert.match(out, /相近的有：im2cc/)
-  assert.match(out, /列出全部：\/ls/)
+  assert.match(out, /❌ 没找到项目 "im2ccx"/)
+  assert.match(out, /或你是不是想找：im2cc/)
+  assert.match(out, /在电脑端 fn <名称> 先创建一个对话/)
+  assert.match(out, /在这里用完整路径.*~\/Code\/im2ccx/)
+  assert.match(out, /已用过的项目列表：\/ls/)
 })

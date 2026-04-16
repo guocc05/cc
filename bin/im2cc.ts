@@ -75,12 +75,12 @@ function cmdHelp(): void {
   console.log(renderUnifiedHelp())
 }
 
-function validateSessionPathForAttach(cwd: string, config: Im2ccConfig): { ok: true, resolvedPath: string } | { ok: false, message: string } {
-  const validation = validatePath(cwd, config)
+function validateSessionPathForAttach(cwd: string): { ok: true, resolvedPath: string } | { ok: false, message: string } {
+  const validation = validatePath(cwd)
   if (!validation.valid) {
     return {
       ok: false,
-      message: `❌ ${validation.error}\n如需继续，请先调整工作区（路径白名单）后再接入这个对话。`,
+      message: `❌ ${validation.error}\n项目目录可能已被移动或删除，请检查后重试。`,
     }
   }
   return { ok: true, resolvedPath: validation.resolvedPath }
@@ -220,7 +220,7 @@ switch (command) {
 
 守护进程:
   setup              配置飞书 App 凭证
-  secure             配置用户白名单和路径白名单
+  secure             配置允许使用 IM Bot 的用户白名单
   onboard            查看首次安装与 post-success 引导
   start              启动守护进程
   stop               停止守护进程
@@ -786,7 +786,7 @@ async function cmdNew(): Promise<void> {
   const cwd = pathArg ? expandPath(pathArg) : process.cwd()
 
   const config = loadConfig()
-  const validation = validatePath(cwd, config)
+  const validation = validatePath(cwd)
   if (!validation.valid) {
     console.log(`❌ ${validation.error}`)
     return
@@ -904,7 +904,7 @@ async function cmdConnect(): Promise<void> {
   }
 
   const config = loadConfig()
-  const pathCheck = validateSessionPathForAttach(session.cwd, config)
+  const pathCheck = validateSessionPathForAttach(session.cwd)
   if (!pathCheck.ok) {
     console.log(pathCheck.message)
     return
@@ -1038,7 +1038,7 @@ async function cmdConnectDoubleArg(newName: string, query: string): Promise<void
   const match = matches[0]
   const sessionId = match.sessionId
   const config = loadConfig()
-  const pathCheck = validateSessionPathForAttach(match.projectPath, config)
+  const pathCheck = validateSessionPathForAttach(match.projectPath)
 
   if (!pathCheck.ok) {
     console.log(pathCheck.message)
@@ -1248,9 +1248,7 @@ function preferredFirstSessionCommand(snapshot: RuntimeSnapshot): string {
 }
 
 function needsSecurityReview(config: Im2ccConfig): boolean {
-  if (config.allowedUserIds.length === 0) return true
-  if (config.pathWhitelist.length !== 1) return true
-  return expandPath(config.pathWhitelist[0]) === path.join(os.homedir(), 'Code')
+  return config.allowedUserIds.length === 0
 }
 
 function nextActionLines(snapshot: RuntimeSnapshot): string[] {
@@ -1279,7 +1277,7 @@ function nextActionLines(snapshot: RuntimeSnapshot): string[] {
     actions.push('运行 im2cc install-service，并按提示加载 LaunchAgent')
   }
   if (needsSecurityReview(snapshot.config)) {
-    actions.push('运行 im2cc secure，配置用户白名单和项目路径白名单')
+    actions.push('运行 im2cc secure，配置允许使用 IM Bot 的用户白名单')
   }
   if (actions.length > 0) return actions
   return ['已经完成首次成功并做过基础加固；后续高频命令见 im2cc help']
@@ -1308,7 +1306,7 @@ function cmdOnboard(): void {
   } else {
     console.log(`  ${snapshot.launchAgentState === 'loaded' ? '✅' : '⬤'} 开机自启`)
   }
-  console.log(`  ${needsSecurityReview(snapshot.config) ? '⬤' : '✅'} 安全加固（用户白名单 / 路径白名单）`)
+  console.log(`  ${needsSecurityReview(snapshot.config) ? '⬤' : '✅'} 安全加固（用户白名单）`)
   console.log('')
   console.log(firstSuccessDone ? '你已经完成第一次成功。' : '先完成一次真实对话流转，再做稳定化配置。')
   console.log('')
@@ -1362,20 +1360,13 @@ async function cmdSecure(): Promise<void> {
     config.allowedUserIds = splitCsvList(userIds)
   }
 
-  const currentPaths = config.pathWhitelist.join(', ')
-  const pathWl = await prompt.ask(`路径白名单（逗号分隔；输入 default 恢复 ~/Code，留空保持不变）[${currentPaths}]: `)
-  if (pathWl.trim().toLowerCase() === 'default') {
-    config.pathWhitelist = [path.join(os.homedir(), 'Code')]
-  } else if (pathWl.trim()) {
-    config.pathWhitelist = splitCsvList(pathWl)
-  }
-
   prompt.close()
 
   saveConfig(config)
   console.log('\n✅ 安全配置已保存')
   console.log(`用户白名单: ${config.allowedUserIds.length > 0 ? config.allowedUserIds.join(', ') : '所有人可用'}`)
-  console.log(`路径白名单: ${config.pathWhitelist.join(', ')}`)
+  console.log('提示：im2cc 的安全边界是 IM 端的用户白名单 + AI 工具自身的 permission mode，')
+  console.log('      不依赖路径限制（AI 启动后可访问任何绝对路径）。请谨慎使用 YOLO/bypass。')
   console.log('建议再运行一次 im2cc doctor 确认当前状态。')
 }
 
@@ -1564,7 +1555,6 @@ function cmdDoctor(): void {
   console.log(`配置文件: ${configExists() ? '✅ 已配置' : '❌ 未配置 (运行 im2cc setup)'}`)
   console.log(`飞书 App ID: ${config.feishu.appId ? '✅ ****' + config.feishu.appId.slice(-4) : '⬤ 未设置'}`)
   console.log(`用户白名单: ${config.allowedUserIds.length > 0 ? '✅ ' + config.allowedUserIds.length + ' 人' : '⚠️ 未设置 (所有人可用)'}`)
-  console.log(`路径白名单: ${config.pathWhitelist.join(', ')}`)
 
   // 注册表 / 活跃绑定
   console.log(`已注册对话: ${snapshot.registeredCount}${snapshot.registeredCount === 0 ? ' (先进入项目目录后用 fn <名称> 创建)' : ''}`)

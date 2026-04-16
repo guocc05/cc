@@ -10,7 +10,6 @@ function makeConfig() {
   return {
     feishu: { appId: 'app-id', appSecret: 'app-secret' },
     allowedUserIds: [],
-    pathWhitelist: ['/tmp'],
     defaultPermissionMode: 'default',
     defaultModes: {},
     defaultIdleTimeoutSeconds: 600,

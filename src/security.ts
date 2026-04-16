@@ -1,6 +1,6 @@
 /**
- * @input:    Im2ccConfig (白名单列表、路径白名单)
- * @output:   isUserAllowed(), validatePath() — 身份验证和路径安全验证
+ * @input:    Im2ccConfig (allowedUserIds)
+ * @output:   isUserAllowed(), isValidSessionName(), expandPath(), validatePath() — 用户身份校验、session 名称校验、路径展开与存在性校验
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -35,11 +35,14 @@ export interface PathValidationResult {
   error?: string
 }
 
-/** 验证路径：展开、绝对化、存在性、白名单 */
-export function validatePath(rawPath: string, config: Im2ccConfig): PathValidationResult {
+/**
+ * 验证路径：展开、解析 symlink、确认存在且是目录。
+ * 不做"白名单"拦截 — 访问范围由 AI 工具自身的 permission mode 决定，
+ * 而非由路径前缀决定（见 PROJECT.md 安全模型）。
+ */
+export function validatePath(rawPath: string): PathValidationResult {
   const expanded = expandPath(rawPath)
 
-  // resolve symlinks
   let resolved: string
   try {
     resolved = fs.realpathSync(expanded)
@@ -47,7 +50,6 @@ export function validatePath(rawPath: string, config: Im2ccConfig): PathValidati
     return { valid: false, resolvedPath: expanded, error: `路径不存在: ${expanded}` }
   }
 
-  // 必须是目录
   try {
     const stat = fs.statSync(resolved)
     if (!stat.isDirectory()) {
@@ -57,56 +59,5 @@ export function validatePath(rawPath: string, config: Im2ccConfig): PathValidati
     return { valid: false, resolvedPath: resolved, error: `无法访问: ${resolved}` }
   }
 
-  // 白名单检查
-  const whitelistResolved = config.pathWhitelist.map(p => {
-    const exp = expandPath(p)
-    try { return fs.realpathSync(exp) } catch { return exp }
-  })
-
-  const allowed = whitelistResolved.some(prefix =>
-    resolved === prefix || resolved.startsWith(prefix + path.sep)
-  )
-
-  if (!allowed) {
-    return {
-      valid: false,
-      resolvedPath: resolved,
-      error: `路径不在白名单内。允许的路径: ${config.pathWhitelist.join(', ')}`,
-    }
-  }
-
   return { valid: true, resolvedPath: resolved }
-}
-
-/** 智能路径解析：短名称 → 在白名单目录下查找匹配的子目录 */
-export function resolvePath(rawPath: string, config: Im2ccConfig): string {
-  // 已经是绝对路径或 ~ 开头，直接返回
-  if (rawPath.startsWith('/') || rawPath.startsWith('~')) return rawPath
-
-  // 短名称模式：在白名单目录下查找
-  for (const prefix of config.pathWhitelist) {
-    const expanded = expandPath(prefix)
-    const candidate = path.join(expanded, rawPath)
-    if (fs.existsSync(candidate)) return candidate
-  }
-
-  // 找不到，原样返回让 validatePath 报错
-  return rawPath
-}
-
-/** 列出白名单目录下的所有项目目录 */
-export function listProjects(config: Im2ccConfig): string[] {
-  const projects: string[] = []
-  for (const prefix of config.pathWhitelist) {
-    const expanded = expandPath(prefix)
-    try {
-      const entries = fs.readdirSync(expanded, { withFileTypes: true })
-      for (const entry of entries) {
-        if (entry.isDirectory() && !entry.name.startsWith('.')) {
-          projects.push(entry.name)
-        }
-      }
-    } catch { /* 目录不存在 */ }
-  }
-  return projects.sort()
 }
