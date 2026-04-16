@@ -32,6 +32,17 @@ import {
   formatAntiPomodoroStatus,
   getAntiPomodoroSnapshot,
 } from './anti-pomodoro.js'
+import { parseAt, parseIn, parseCron } from './schedule-parser.js'
+import {
+  addSchedule,
+  cancelScheduleByName,
+  getScheduleByName as getScheduledForSession,
+  formatScheduleStatus,
+  listAllSchedules,
+  formatScheduleListLine,
+} from './scheduler.js'
+import type { Schedule } from './schedule-store.js'
+import { MSG_LENGTH_LIMIT } from './transport.js'
 
 export interface ParsedCommand {
   command: string
@@ -50,7 +61,7 @@ function validateSessionProjectPath(rawPath: string): { ok: true, resolvedPath: 
 }
 
 // 统一命令名：电脑端和飞书端尽量保持一致；/help 仅作兼容别名保留
-const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs'])
+const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs', 'at', 'in', 'cron'])
 
 export function parseCommand(text: string): ParsedCommand | null {
   const trimmed = text.trim()
@@ -79,6 +90,9 @@ export async function handleCommand(
     case 'fqon': return handleFqOn()
     case 'fqoff': return handleFqOff()
     case 'fqs': return handleFqStatus()
+    case 'at': return handleScheduleSet('at', cmd.args, conversationId, transport)
+    case 'in': return handleScheduleSet('in', cmd.args, conversationId, transport)
+    case 'cron': return handleScheduleSet('cron', cmd.args, conversationId, transport)
     case 'fhelp':
     case 'help': return handleHelp()
     default: return `未知命令: /${cmd.command}`
@@ -759,6 +773,157 @@ async function handleFs(conversationId: string): Promise<string> {
   return buildSessionStatus(binding)
 }
 
+function handleScheduleSet(
+  kind: 'at' | 'in' | 'cron',
+  args: string,
+  conversationId: string,
+  transport: TransportType,
+): string {
+  const trimmed = args.trim()
+  const tokens = trimmed ? trimmed.split(/\s+/) : []
+  const head = tokens[0]?.toLowerCase()
+
+  // 全局命令（无需绑定）：list / cancel <name>
+  if (head === 'list') {
+    return renderScheduleList(transport)
+  }
+  if (head === 'cancel' && tokens.length >= 2) {
+    return handleScheduleCancelByName(tokens[1])
+  }
+
+  // 以下命令需要当前 chat 已绑定 session
+  const binding = getBinding(conversationId)
+  if (!binding) {
+    if (head === 'cancel') {
+      return '该群未接入对话。如需远程取消，用 /at cancel <对话名>；查看全部用 /at list。'
+    }
+    return '该群未接入对话，请先 /fc 或 /fn'
+  }
+
+  const reg = lookupBySessionId(binding.sessionId)
+  if (!reg) return '当前 session 未在 registry 注册，无法设置定时消息'
+
+  // 无参数：展示当前 session 的定时消息（任意类型）+ 用法
+  if (!trimmed) {
+    return renderScheduleStatus(reg.name, kind)
+  }
+
+  // /at cancel（取消当前绑定 session 的）
+  if (head === 'cancel' && tokens.length === 1) {
+    const removed = cancelScheduleByName(reg.name)
+    if (!removed) return `${reg.name} 当前没有定时消息`
+    return `✅ 已取消 ${reg.name} 的定时消息`
+  }
+
+  const parsed = kind === 'at' ? parseAt(trimmed)
+    : kind === 'in' ? parseIn(trimmed)
+    : parseCron(trimmed)
+
+  if (!parsed.ok) return `❌ ${parsed.error}`
+
+  const { schedule, replaced } = addSchedule({
+    name: reg.name,
+    transport,
+    conversationId,
+    kind,
+    spec: parsed.spec,
+    message: parsed.message,
+    nextFireAt: parsed.nextFireAt,
+  })
+
+  const lines: string[] = []
+  if (replaced) {
+    lines.push(`⚠️ 已替换 ${reg.name} 原有的定时消息（每个 session 仅允许一条）`)
+    lines.push('')
+  }
+  lines.push('✅ 定时消息已设置')
+  lines.push(formatScheduleStatus(schedule))
+  lines.push('')
+  lines.push('管理：/at list 看全部，/at cancel 取消本对话，/at cancel <对话名> 远程取消')
+  return lines.join('\n')
+}
+
+function handleScheduleCancelByName(name: string): string {
+  const removed = cancelScheduleByName(name)
+  if (!removed) {
+    return [
+      `未找到 "${name}" 的定时消息`,
+      '',
+      '查看全部：/at list',
+    ].join('\n')
+  }
+  return [
+    `✅ 已远程取消 "${name}" 的定时消息`,
+    `原触发：${removed.kind} ${removed.spec}`,
+    `原消息：${removed.message.length > 60 ? removed.message.slice(0, 60) + '…' : removed.message}`,
+  ].join('\n')
+}
+
+function renderScheduleList(transport: TransportType): string {
+  const all = listAllSchedules().slice().sort((a: Schedule, b: Schedule) => a.nextFireAt - b.nextFireAt)
+  if (all.length === 0) {
+    return [
+      '🕐 当前没有任何定时消息',
+      '',
+      '设置：/at HH:MM <消息> | /in <时长> <消息> | /cron <表达式> <消息>',
+    ].join('\n')
+  }
+
+  const header = `🕐 全部定时消息 (${all.length})`
+  const limit = MSG_LENGTH_LIMIT[transport] ?? 4096
+  const reservedTail = 200  // 给截断提示留余量
+
+  const lines: string[] = [header, '']
+  let bytes = header.length + 2
+  let shown = 0
+  let truncatedAt: number | null = null
+
+  for (const s of all) {
+    const block = formatScheduleListLine(s)
+    const cost = block.length + 2  // 含分隔空行
+    if (bytes + cost + reservedTail > limit) {
+      truncatedAt = shown
+      break
+    }
+    lines.push(block)
+    lines.push('')
+    bytes += cost
+    shown += 1
+  }
+
+  if (truncatedAt !== null) {
+    lines.push(`⚠️ 还有 ${all.length - truncatedAt} 条未显示（${transport === 'wechat' ? '微信单条上限较小' : 'IM 单条上限'}）。回电脑端查看完整列表。`)
+  } else {
+    lines.push('远程取消：/at cancel <对话名>')
+  }
+  return lines.join('\n')
+}
+
+function renderScheduleStatus(name: string, kind: 'at' | 'in' | 'cron'): string {
+  const existing = getScheduledForSession(name)
+  const lines: string[] = []
+  if (existing) {
+    lines.push(formatScheduleStatus(existing))
+    lines.push('')
+    lines.push('替换：再次 /at|/in|/cron 设置；取消：/at cancel')
+  } else {
+    lines.push(`${name} 当前没有定时消息`)
+    lines.push('')
+  }
+  if (kind === 'at') {
+    lines.push('用法：')
+    lines.push('  /at HH:MM <消息>             — 今天该时刻（已过则推到明天）')
+    lines.push('  /at YYYY-MM-DD HH:MM <消息>  — 指定日期时刻')
+  } else if (kind === 'in') {
+    lines.push('用法：/in <时长> <消息>')
+    lines.push('  支持 30s / 5m / 2h / 1d，可组合 1h30m')
+  } else {
+    lines.push('用法：/cron <分> <时> <日> <月> <周> <消息>')
+    lines.push('  例：/cron 0 9 * * * 早晨开工')
+  }
+  return lines.join('\n')
+}
+
 function handleFqOn(): string {
   return enableAntiPomodoro().message
 }
@@ -806,6 +971,12 @@ export function renderUnifiedHelp(): string {
     '/mode                    — 查看可用模式',
     '/mode <模式别名>         — 切换模式（例如 /mode au）',
     '/stop                    — 中断当前执行',
+    '/at HH:MM <消息>          — 在指定时刻自动发该消息到当前对话',
+    '/in <时长> <消息>          — 间隔后自动发（如 /in 2h 继续）',
+    '/cron <5 段表达式> <消息>  — 周期触发（如 /cron 0 9 * * * 早晨开工）',
+    '/at list                 — 列出全部定时消息（无需绑定）',
+    '/at cancel               — 取消当前对话的定时消息',
+    '/at cancel <对话名>      — 远程取消任意对话的定时消息',
     '/fqon                    — 开启反茄钟',
     '/fqs                     — 查看反茄钟状态',
     '/fqoff                   — 仅提示需回到电脑端关闭',

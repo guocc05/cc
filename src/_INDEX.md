@@ -24,7 +24,10 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - codex-driver.ts：Codex CLI 驱动（thread_id 创建、resume、输出解析）
 - gemini-driver.ts：Gemini CLI 驱动（best-effort，session_id 创建、resume、输出解析）
 - queue.ts：消息队列（per-group FIFO）、Job 三态管理、控制面分离（/stop 手动中断）；绑定切换后的旧结果丢弃、startup recovery 送达校验、本地接回电脑时的 inflight 中断，以及 handoff 保护态所需的 inflight / completed snapshot 查询
-- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径存在性复检、/fn 教学卡片、/ls 展示 registry 派生的已用项目、/fn 项目短名解析 + 模糊匹配建议 + 全新路径兜底；配 claudeLauncher 时 /fn 用 imDefaultClaudeProfile 非交互启动）
+- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径存在性复检、/fn 教学卡片、/ls 展示 registry 派生的已用项目、/fn 项目短名解析 + 模糊匹配建议 + 全新路径兜底；配 claudeLauncher 时 /fn 用 imDefaultClaudeProfile 非交互启动；/at /in /cron 设置每 session 一条定时消息）
+- schedule-parser.ts：/at /in /cron 表达式解析（自实现 5 段 cron，无外部依赖）；返回绝对时间戳 nextFireAt 与剩余消息体
+- schedule-store.ts：~/.im2cc/data/schedules.json 原子读写；name 主键 upsert 唯一约束
+- scheduler.ts：定时消息调度核心 — 内存 timer + 持久化、daemon 重启零漂移、错过窗口处理（at/in 立即触发，cron 跳过本次重算下次）；触发时发回执到原 chat、消息走 queue 投递到当前活跃绑定（无绑定则 driver 直调，输出落日志）
 - status.ts：会话状态面板构建（/fs 和 /fc 共用），含 context token、git 分支、Anthropic 配额
 - output.ts：stream-json 事件 → 飞书消息文本格式化
 - registry.ts：命名 session 注册表（register/lookup/list/remove，永久寻址）

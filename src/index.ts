@@ -34,6 +34,7 @@ import {
   queueDelayedReply,
   startWorkPhaseIfWaiting,
 } from './anti-pomodoro.js'
+import { initScheduler } from './scheduler.js'
 import { structureSystemReply } from './message-format.js'
 import {
   DAEMON_LOCK_STARTUP_GRACE_MS,
@@ -398,6 +399,9 @@ export async function startDaemon(): Promise<void> {
         fqon: 'OK',
         fqoff: 'OK',
         fqs: 'OK',
+        at: 'OK',
+        in: 'OK',
+        cron: 'OK',
       }
       react(cmdEmoji[cmd.command] ?? 'OK')
 
@@ -542,6 +546,11 @@ export async function startDaemon(): Promise<void> {
   }
 
   antiPomodoro.start()
+
+  // 初始化定时消息调度器（含错过窗口处理：at/in 立即触发，cron 跳过本次）
+  await initScheduler({
+    sendToChat: (transport, conversationId, text) => sendToConversation(transport, conversationId, text),
+  })
 
   // 恢复上次中断的任务
   await recoverOnStartup(

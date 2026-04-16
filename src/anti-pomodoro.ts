@@ -10,7 +10,8 @@ import { error } from './logger.js'
 
 export const ANTI_POMODORO_WORK_MS = 5 * 60 * 1000
 export const ANTI_POMODORO_REST_MS = 30 * 60 * 1000
-export const ANTI_POMODORO_IM_COMMANDS = new Set(['fqon', 'fqoff', 'fqs'])
+// 反茄钟休息期允许的 IM 命令：自身管理 + 定时消息（仅"安排未来"，不立即触发工作）
+export const ANTI_POMODORO_IM_COMMANDS = new Set(['fqon', 'fqoff', 'fqs', 'at', 'in', 'cron'])
 const ANTI_POMODORO_RETRY_MS = 15 * 1000
 
 export type AntiPomodoroPhase = 'waiting' | 'work' | 'rest'
