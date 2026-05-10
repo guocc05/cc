@@ -13,7 +13,7 @@ last_actor: builder
 handoff_reason: null
 
 created_at: 2026-05-10T01:44:47Z
-updated_at: 2026-05-10T04:55:00Z
+updated_at: 2026-05-10T05:10:00Z
 
 depends_on: []
 related: []
@@ -23,7 +23,8 @@ links:
   branch: ""
   deploy: ""
 
-commit_range: "pending — 用户尚未 commit；改动文件：src/{_INDEX.md,claude-driver.ts,codex-driver.ts,config.ts,file-staging.ts,gemini-driver.ts,index.ts,tool-driver.ts,wechat.ts,attachment-prompt.ts(新),office-upgrader.ts(新)} + scripts/office-upgrader.test.mjs(新) + ARCHITECTURE.md(新) + ROADMAP.md(新) + docs/features/(新) + tests/fixtures/office-docs/(新)"
+# 字段已弃用 (2026-05-10)；追溯改用 git log --grep="@20260510-office-doc-relay"
+# 详见 ~/CLAUDE.md §2.2 "追溯 feature 的 commits"
 
 revision:
   - date: 2026-05-10T01:44:47Z
@@ -124,6 +125,14 @@ revision:
     to_owner: null
     handoff_reason: null
     action: "REVISE：跟随 §Spec v2 清理 §Plan 中过时措辞 — 删风险表'微信 ClawBot iLink 文件协议未知'整行；其余 5 处去 V1.1/V2 时间承诺 + AC 编号同步；新增 §Plan 末尾 'REVISE 修订记录'区块。state 不变（feature 仍 done）"
+  - date: 2026-05-10T05:10:00Z
+    actor: user
+    from_state: done
+    to_state: done
+    from_owner: null
+    to_owner: null
+    handoff_reason: null
+    action: "schema 优化：弃用 frontmatter.commit_range 字段（git 是单一真相源；维护字段易过时）；改用约定 git log --grep=\"@<feature-id>\" 追溯。本次同步改动：~/CLAUDE.md §2.2 + ~/.claude/skills/builder/SKILL.md + ~/.claude/skills/go/templates/feature-template.md + 本文件 + 衍生 fix feature 文件。详见 ~/CLAUDE.md §2.2 '追溯 feature 的 commits'"
 ---
 
 <!--

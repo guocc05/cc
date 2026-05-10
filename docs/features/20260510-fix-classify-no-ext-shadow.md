@@ -13,7 +13,7 @@ last_actor: builder
 handoff_reason: null
 
 created_at: 2026-05-10T03:00:00Z
-updated_at: 2026-05-10T04:30:00Z
+updated_at: 2026-05-10T05:10:00Z
 
 depends_on: []
 related: ["20260510-office-doc-relay"]
@@ -23,7 +23,8 @@ links:
   branch: ""
   deploy: ""
 
-commit_range: "pending — 用户尚未 commit；改动文件：src/file-staging.ts + scripts/office-upgrader.test.mjs"
+# 字段已弃用 (2026-05-10)；追溯改用 git log --grep="@20260510-fix-classify-no-ext-shadow"
+# 详见 ~/CLAUDE.md §2.2 "追溯 feature 的 commits"
 
 revision:
   - date: 2026-05-10T03:00:00Z
@@ -50,6 +51,14 @@ revision:
     to_owner: null
     handoff_reason: null
     action: "AC-1..AC-8 全部 passed；23 个 mjs 测试套件无回归"
+  - date: 2026-05-10T05:10:00Z
+    actor: user
+    from_state: done
+    to_state: done
+    from_owner: null
+    to_owner: null
+    handoff_reason: null
+    action: "schema 优化：弃用 frontmatter.commit_range 字段。同步改 V4.0 全局 schema + skill。详见 @20260510-office-doc-relay 同期 revision 节点 + ~/CLAUDE.md §2.2"
 ---
 
 # fix — classifyFile 无扩展名早返回，遮蔽 Dockerfile/Makefile 分类
