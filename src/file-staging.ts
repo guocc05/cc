@@ -1,6 +1,6 @@
 /**
- * @input:    飞书下载的文件, binding.cwd
- * @output:   stageFile(), consumeStaged(), ensureInbox(), classifyFile(), runInboxCleanup() — 文件暂存与 inbox 管理
+ * @input:    IM 下载的文件, binding.cwd
+ * @output:   stageFile(), consumeStaged(), ensureInbox(), classifyFile(), needsLegacyUpgrade(), runInboxCleanup() — 文件暂存与 inbox 管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -10,15 +10,19 @@ import { log } from './logger.js'
 
 // --- 类型定义 ---
 
+export type FileCategory = 'image' | 'text' | 'office' | 'unsupported'
+
 export interface StagedFile {
   filePath: string
   originalName: string
-  category: 'image' | 'text'
+  category: FileCategory
   messageId: string
   stagedAt: string
+  /** office 类专用：旧格式 soffice 升格成功后的产物路径 */
+  upgradedPath?: string
+  /** office 类专用：旧格式升格失败时的原因短语（inline 进 prompt） */
+  upgradeError?: string
 }
-
-type FileCategory = 'image' | 'text' | 'unsupported'
 
 // --- 扩展名白名单 ---
 
@@ -32,6 +36,11 @@ const TEXT_EXTENSIONS = new Set([
 
 const IMAGE_EXTENSIONS = new Set([
   'png', 'jpg', 'jpeg', 'gif', 'webp',
+])
+
+const OFFICE_EXTENSIONS = new Set([
+  'pdf', 'docx', 'xlsx', 'pptx',  // 新格式
+  'doc', 'xls', 'ppt',             // 旧格式（需 soffice 升格）
 ])
 
 // --- 暂存队列（内存） ---
@@ -64,16 +73,28 @@ export function ensureInbox(cwd: string): string {
   return fs.realpathSync(inbox)
 }
 
-/** 根据文件扩展名分类：text / image / unsupported */
+/** 根据文件扩展名分类：text / image / office / unsupported */
 export function classifyFile(fileName: string): FileCategory {
+  // 特殊无扩展名文件（Dockerfile/Makefile）必须前置检测，否则会被 !ext 早返回遮蔽
+  const baseName = path.basename(fileName).toLowerCase()
+  if (baseName === 'dockerfile' || baseName === 'makefile') return 'text'
   const ext = path.extname(fileName).slice(1).toLowerCase()
   if (!ext) return 'unsupported'
   if (TEXT_EXTENSIONS.has(ext)) return 'text'
   if (IMAGE_EXTENSIONS.has(ext)) return 'image'
-  // 特殊无扩展名文件（如 Dockerfile, Makefile）通过文件名匹配
-  const baseName = path.basename(fileName).toLowerCase()
-  if (baseName === 'dockerfile' || baseName === 'makefile') return 'text'
+  if (OFFICE_EXTENSIONS.has(ext)) return 'office'
   return 'unsupported'
+}
+
+/** 旧格式 office 文件需要升格到新格式；返回目标扩展名或 false */
+export function needsLegacyUpgrade(fileName: string): false | 'docx' | 'xlsx' | 'pptx' {
+  const ext = path.extname(fileName).slice(1).toLowerCase()
+  switch (ext) {
+    case 'doc': return 'docx'
+    case 'xls': return 'xlsx'
+    case 'ppt': return 'pptx'
+    default: return false
+  }
 }
 
 /** 清理过期 inbox 文件；接受 cwd 数组以避免循环依赖 */

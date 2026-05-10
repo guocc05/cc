@@ -15,6 +15,13 @@ export interface ToolCapabilities {
   supportsResume: boolean       // 是否支持恢复历史对话
   supportsDiscovery: boolean    // 是否支持发现未注册的本地对话
   supportsInterrupt: boolean    // 是否支持中断执行中的任务
+  /**
+   * office 文档（pdf/docx/xlsx/pptx）处理策略：
+   *  'native'           = 工具自带 skill/能力（Claude + Anthropic document-skills plugin）
+   *  'prompt-template'  = 靠 prompt 引导工具自行 spawn pandoc/python 等（Codex/Gemini）
+   * 详见 ARCHITECTURE.md §5.1。
+   */
+  officeDocStrategy: 'native' | 'prompt-template'
 }
 
 export interface CreateSessionResult {

@@ -130,8 +130,28 @@ export class WeChatAdapter implements TransportAdapter {
         }
 
         for (const rawMsg of messages) {
-          // 只处理用户文本消息（message_type=1）
-          if (rawMsg.message_type !== 1) continue
+          // 非文本消息（含文件 / 图片 / 视频）→ 当前通道暂不支持，提示用户改用飞书
+          // 备注：完整 ClawBot iLink 文件接收（解析 file_message + CDN 下载 + AES-128-ECB 解密）
+          // 不在本 feature 范围；未来如要支持需单独评估，本处不做时间承诺。
+          if (rawMsg.message_type !== 1) {
+            log(`[wechat] 收到非文本消息 type=${rawMsg.message_type} from=${rawMsg.from_user_id}（当前通道不支持，已回复中性提示）`)
+            // 缓存 context_token 以便回复
+            if (rawMsg.context_token) {
+              this.contextTokens.set(rawMsg.from_user_id, {
+                token: rawMsg.context_token,
+                receivedAt: Date.now(),
+                useCount: 0,
+              })
+              saveContextTokens(this.contextTokens)
+            }
+            try {
+              await this.sendRawText(`wechat:${rawMsg.from_user_id}`,
+                '当前通道暂不支持文件、图片或语音传输。如需发送文档，请改用飞书。')
+            } catch (err) {
+              error(`[wechat] 提示非文本消息失败: ${err}`)
+            }
+            continue
+          }
 
           // 从 item_list 中提取文本
           const firstItem = rawMsg.item_list?.[0]

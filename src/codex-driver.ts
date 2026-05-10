@@ -18,6 +18,7 @@ export class CodexDriver extends BaseToolDriver {
     supportsResume: true,
     supportsDiscovery: false,
     supportsInterrupt: true,
+    officeDocStrategy: 'prompt-template',
   }
 
   getVersion(): string { return this.getToolVersion('codex') }

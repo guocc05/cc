@@ -23,6 +23,7 @@ export class ClaudeDriver extends BaseToolDriver {
     supportsResume: true,
     supportsDiscovery: true,
     supportsInterrupt: true,
+    officeDocStrategy: 'native',
   }
 
   getVersion(): string {

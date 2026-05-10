@@ -24,7 +24,7 @@ export interface Im2ccConfig {
   defaultPermissionMode: string // 旧字段，保留兼容：YOLO | default | auto-edit
   defaultModes: Record<string, string> // per-tool 默认模式 { claude: 'bypassPermissions', codex: 'bypass', ... }
   recapBudget: number           // /fc 时上下文回顾的字符预算，0 = 禁用
-  maxFileSizeMB: number         // 文件传输最大体积，默认 10
+  maxFileSizeMB: number         // 文件传输最大体积，默认 30（office 文档常较大）
   inboxTtlMinutes: number       // inbox 文件过期时间，默认 60
   pollIntervalMs: number        // REST 轮询间隔（毫秒），默认 5000
 }
@@ -48,7 +48,7 @@ const DEFAULT_CONFIG: Im2ccConfig = {
   defaultPermissionMode: 'default',
   defaultModes: {},  // 空 = 使用 mode-policy 内置默认
   recapBudget: 2000,
-  maxFileSizeMB: 10,
+  maxFileSizeMB: 30,
   inboxTtlMinutes: 60,
   pollIntervalMs: 5000,
 }
