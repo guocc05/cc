@@ -1,9 +1,10 @@
 ---
 title: im-askuserquestion-bridge
-status: active
+status: completed
 scope: heavy
 created: 2026-05-10
-updated: 2026-05-11T03:30Z
+updated: 2026-05-11T06:30Z
+completed: 2026-05-11
 ---
 
 # ExecPlan: im-askuserquestion-bridge
@@ -212,9 +213,23 @@ _(实施过程中填，未预期的行为、优化机会、见解)_
 
 ## 10. 结果与回顾
 
-_(完成时填)_
+完成于 2026-05-11，commit 47bd061。
 
 - **交付**：
-- **剩余工作**：
+  - daemon 单 question + 多 question 串行 AskUserQuestion 桥接全链路（飞书 + 微信，文本统一格式）
+  - 11 个新单测（7 askuser-bridge IPC + 4 buildAskUserText）；151 全套测试零回归
+  - bootstrap DESIGN_SYSTEM.md（项目首次 designer 介入产出）；ARCHITECTURE.md §5.3 + §4.7/§4.8 新章节
+  - V1.x 升级方向（飞书 WSClient 真按钮）已在 ARCHITECTURE / DESIGN_SYSTEM / feature spec 标注，类型预留接口
+
+- **剩余工作**（标记 deferred，非阻塞）：
+  - AC-5 / AC-6 / AC-7 / AC-9 端到端实测（代码路径完备 + 核心单测覆盖；后续触发到自然场景再补证）
+
 - **经验教训**：
+  - **架构假设盲区**：Phase 0 spike 只覆盖了 Claude hook 路径，没覆盖飞书事件订阅链路 — Phase 2 实施时才发现项目 REST 轮询架构与飞书 `card.action.trigger` 推送不兼容。教训：spike 要覆盖**整条路径上每个外部接口**，不能只验最关键的"中间一段"。
+  - **"复杂没把握就降级"的判断价值**：本可以闷头加 WSClient 长连接子系统，但调研后发现成本/收益不划算，及时改走文本编号路径；信息架构一致原则让降级方案与原方案表达力差距可控（用户实际反馈飞书 + 微信都顺畅，"点按钮"的缺失体感很弱）。
+  - **多 question 串行实测一次过**：hook 内 `for (const q of questions) await askOne(...)` + askuser-bridge 同 toolUseId 重入清理 + handleMessage 找最早 pending — 三处独立写的逻辑在端到端汇合时直接对得上，说明事先想清楚状态机比试错快。
+  - **InteractiveCardMessage 类型保留 + degradedNote 字段预留 V1.x 升级位**：spec 修订时没把类型砍掉，未来加 WSClient 不用改 transport 接口；这种"约束收紧但接口不改"的处理让代码与 spec 同步更平滑。
+
 - **下一步**：
+  - V1.x（条件性）：若 IM 用户群规模到一定量、对"点按钮"有明确需求，再评估 WSClient 长连接方案
+  - 短期可触发的关联 feature：`@20260510-im-slash-passthrough`（IM 端透传 AI 工具内置斜杠命令；draft 中）

@@ -9,7 +9,7 @@
 - [x] IM 端 office 文档（PDF/Word/Excel/PPT）传输与解析 — `@20260510-office-doc-relay`
 - [x] fix — classifyFile 无扩展名早返回，遮蔽 Dockerfile/Makefile 分类 — `@20260510-fix-classify-no-ext-shadow`
 - [ ] IM 端透传 AI 工具内置斜杠命令 — `@20260510-im-slash-passthrough`
-- [~] IM 端处理 AI 工具反向提问（AskUserQuestion 桥接） — `@20260510-im-askuserquestion-bridge`
+- [x] IM 端处理 AI 工具反向提问（AskUserQuestion 桥接） — `@20260510-im-askuserquestion-bridge`
 
 ## Archive
 
@@ -38,6 +38,9 @@
 | 2026-05-10 | pm | @20260510-im-askuserquestion-bridge consolidate：§Spec 修订完成（10 AC + 边界 8 行异常 + Codex/Gemini 列入不做 + 待确认项清空）；handoff /builder |
 | 2026-05-10 | builder | @20260510-im-askuserquestion-bridge → building；preflight 通过；§Tasks 4 phase 共 32 任务 + 10 AC 验证骨架；待 BLOCKING：Spike 跑法 + 是否建 ExecPlan |
 | 2026-05-10 | builder | @20260510-im-askuserquestion-bridge Phase 0 spike 通过（5/5 观察点）；ExecPlan 已建（heavy）；信心 75→95%+；准备进 Phase 1 |
+| 2026-05-10 | builder | @20260510-im-askuserquestion-bridge Phase 1 完成（IPC socket + hook + transport 接口 + 配置 + claude-launcher 注入 + queue cancel 广播）；新增 7 个单测；147 全套测试零回归 |
+| 2026-05-11 | builder | @20260510-im-askuserquestion-bridge Phase 2+3 完成（spec 修订：调研后飞书 interactive 卡片撤销，改文本编号格式；信息架构跨 transport 一致；保留 InteractiveCardMessage 类型供 V1.x 升级）；ARCHITECTURE/DESIGN_SYSTEM 同步；151 全套测试零回归 |
+| 2026-05-11 | builder | @20260510-im-askuserquestion-bridge → done；端到端飞书+微信单/多 question 全过；commit 47bd061；AC-5/6/7/9 deferred；AC-10 not_applicable；ExecPlan → completed |
 
 ---
 
