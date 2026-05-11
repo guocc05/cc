@@ -14,7 +14,7 @@ import { BaseToolDriver } from './base-driver.js'
 import { filterInitTurns, type RecapTurn } from './recap.js'
 import { registerDriver, type ToolCapabilities, type CreateSessionOptions, type CreateSessionResult, type SendMessageOptions, type SessionFileStatus } from './tool-driver.js'
 import { claudeSessionNameArgs } from './tool-compat.js'
-import { buildClaudeLauncherEnv, getClaudeLauncher } from './claude-launcher.js'
+import { buildClaudeLauncherEnv, getClaudeLauncher, injectAskUserHookSettings } from './claude-launcher.js'
 import { lookupBySessionId } from './registry.js'
 
 export class ClaudeDriver extends BaseToolDriver {
@@ -56,12 +56,20 @@ export class ClaudeDriver extends BaseToolDriver {
 
   async createSession(cwd: string, permissionMode: string, name?: string, opts?: CreateSessionOptions): Promise<CreateSessionResult> {
     const sessionId = this.generateSessionId()
+    const askUser = opts?.conversationId
+      ? injectAskUserHookSettings({ sessionId, conversationId: opts.conversationId })
+      : null
+    const settingsArgs = askUser ? ['--settings', askUser.settingsPath] : []
+    const env = mergeAskUserEnv(
+      buildClaudeLauncherEnv({ phase: 'create', sessionId, sessionName: name, profile: opts?.claudeProfile }),
+      askUser?.env,
+    )
     const output = await this.runTool({
       cmd: getClaudeLauncher(),
       message: '会话已建立。请回复"就绪"。',
-      args: ['-p', '会话已建立。请回复"就绪"。', '--session-id', sessionId, ...claudeSessionNameArgs(name), '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
+      args: ['-p', '会话已建立。请回复"就绪"。', '--session-id', sessionId, ...claudeSessionNameArgs(name), ...settingsArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
       cwd,
-      env: buildClaudeLauncherEnv({ phase: 'create', sessionId, sessionName: name, profile: opts?.claudeProfile }),
+      env,
     })
     return { sessionId, output }
   }
@@ -85,12 +93,21 @@ export class ClaudeDriver extends BaseToolDriver {
 
     const reg = lookupBySessionId(sessionId)
 
+    const askUser = opts?.conversationId
+      ? injectAskUserHookSettings({ sessionId, conversationId: opts.conversationId })
+      : null
+    const settingsArgs = askUser ? ['--settings', askUser.settingsPath] : []
+    const env = mergeAskUserEnv(
+      buildClaudeLauncherEnv({ phase: 'send', sessionId, sessionName: reg?.name, profile: reg?.claudeProfile }),
+      askUser?.env,
+    )
+
     return this.runTool({
       cmd: getClaudeLauncher(),
       message,
-      args: ['-p', message, ...sessionFlag, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
+      args: ['-p', message, ...sessionFlag, ...settingsArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
       cwd,
-      env: buildClaudeLauncherEnv({ phase: 'send', sessionId, sessionName: reg?.name, profile: reg?.claudeProfile }),
+      env,
       onSpawn: opts?.onSpawn,
       outputFile: opts?.outputFile,
       onTurnText: opts?.onTurnText,
@@ -193,4 +210,19 @@ import { getModeCliArgs, migrateLegacyMode } from './mode-policy.js'
 function permissionArgs(mode: string): string[] {
   const native = migrateLegacyMode(mode, 'claude')
   return getModeCliArgs('claude', native)
+}
+
+/**
+ * 合并 launcher env 与 askuser hook env。
+ * - launcher 已含 process.env 完整副本，askuser env 只是少量 IM2CC_* 变量，覆盖叠加即可
+ * - 无 launcher 时 launcherEnv 为 undefined，则以 process.env 为基底叠加 askuser env
+ * - 无 askuser env 时直接返回 launcherEnv（保持旧行为）
+ */
+function mergeAskUserEnv(
+  launcherEnv: NodeJS.ProcessEnv | undefined,
+  askUserEnv: NodeJS.ProcessEnv | undefined,
+): NodeJS.ProcessEnv | undefined {
+  if (!askUserEnv) return launcherEnv
+  if (!launcherEnv) return { ...process.env, ...askUserEnv }
+  return { ...launcherEnv, ...askUserEnv }
 }

@@ -1,6 +1,6 @@
 /**
- * @input:    Im2ccConfig, Transport adapters, AI coding tool CLIs, recap, file-staging, office-upgrader, attachment-prompt
- * @output:   startDaemon(), shouldSendFcRecap() — 主入口：全局异常兜底、初始化各模块、守护进程单实例锁、启动 transport 轮询、消息路由、/fc 上下文回顾、文件暂存与合并（含 office 文档旧格式 soffice 升格）、按 driver capability 拼装 prompt、反茄钟闸门
+ * @input:    Im2ccConfig, Transport adapters, AI coding tool CLIs, recap, file-staging, office-upgrader, attachment-prompt, askuser-bridge
+ * @output:   startDaemon(), shouldSendFcRecap() — 主入口：全局异常兜底、初始化各模块、守护进程单实例锁、启动 transport 轮询、消息路由、/fc 上下文回顾、文件暂存与合并（含 office 文档旧格式 soffice 升格）、按 driver capability 拼装 prompt、反茄钟闸门、AskUserQuestion 桥接（拉起 socket / 订阅 ask/timeout 事件 / pending 时把用户文本视为答案）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -38,6 +38,15 @@ import {
 } from './anti-pomodoro.js'
 import { initScheduler } from './scheduler.js'
 import { structureSystemReply } from './message-format.js'
+import {
+  startAskUserBridge,
+  stopAskUserBridge,
+  onAsk,
+  onTimeoutEvent,
+  submitAnswerByToolUseId,
+  listPending as listPendingAskUser,
+  type PendingAsk,
+} from './askuser-bridge.js'
 import {
   DAEMON_LOCK_STARTUP_GRACE_MS,
   DAEMON_MARKER,
@@ -235,6 +244,16 @@ export async function startDaemon(): Promise<void> {
   }
 
   log('im2cc 启动中...')
+
+  // AskUserQuestion 桥接 — 必须在 transport 启动前就绪，避免 hook 早期连接失败
+  try {
+    await startAskUserBridge()
+  } catch (err) {
+    error(`[askuser-bridge] 启动失败 (将影响 AI 反向提问能力): ${err}`)
+  }
+  process.on('exit', () => {
+    try { stopAskUserBridge() } catch {}
+  })
 
   const config = loadConfig()
 
@@ -468,6 +487,30 @@ export async function startDaemon(): Promise<void> {
         await sendSystem(`命令执行失败: ${err instanceof Error ? err.message : String(err)}`)
       }
     } else {
+      // 优先级 1: 如果当前 binding session 有挂起的 AskUserQuestion，把这条文本视为答案
+      // 编号纯数字 → 对应选项 label；否则 → freeText 原文（含语义不明也按原文给 AI）
+      const bindingForAsk = getBinding(conversationId)
+      if (bindingForAsk) {
+        const pending = listPendingAskUser().find(p => p.sessionId === bindingForAsk.sessionId)
+        if (pending) {
+          const trimmed = (text ?? '').trim()
+          let answer = trimmed
+          const numMatch = /^([1-9])$/.exec(trimmed)
+          if (numMatch) {
+            const idx = parseInt(numMatch[1], 10) - 1
+            if (idx >= 0 && idx < pending.options.length) {
+              answer = pending.options[idx].label
+            }
+          }
+          const ok = submitAnswerByToolUseId(pending.toolUseId, answer)
+          if (ok) {
+            log(`[askuser] 用户回答已注入: session=${pending.sessionId} answer="${answer.slice(0, 40)}"`)
+            react('DONE')   // ✅ 答案已收到
+            return
+          }
+        }
+      }
+
       // 普通消息：入队列发给 AI 工具
       react('OnIt')  // 🫡 收到，在处理
       const binding = getBinding(conversationId)
@@ -563,6 +606,26 @@ export async function startDaemon(): Promise<void> {
   }
 
   antiPomodoro.start()
+
+  // AskUserQuestion 桥接事件：转发到 IM
+  onAsk((ask: PendingAsk) => {
+    log(`[askuser] 转发提问到 IM: session=${ask.sessionId} conv=${ask.conversationId} options=${ask.options.length}`)
+    sendByConversationId(ask.conversationId, {
+      kind: 'interactive_card',
+      cardId: ask.cardId,
+      question: ask.question,
+      options: ask.options.map((o, i) => ({ id: String(i + 1), label: o.label })),
+      allowFreeText: true,
+      timeoutHint: `${Math.round((ask.timeoutAt - ask.createdAt) / 60_000)} 分钟`,
+    }).catch(err => error(`[askuser] 推送提问失败 [${ask.conversationId}]: ${err}`))
+  })
+
+  onTimeoutEvent((ev) => {
+    log(`[askuser] 提问超时: session=${ev.sessionId} reason=${ev.reason}`)
+    const minutes = Math.round((ev.timeoutAt - ev.createdAt) / 60_000)
+    sendByConversationId(ev.conversationId, `⏰ 上次提问已超时（${minutes} 分钟未回复），AI 已基于现有信息继续`)
+      .catch(err => error(`[askuser] 推送超时回执失败 [${ev.conversationId}]: ${err}`))
+  })
 
   // 初始化定时消息调度器（含错过窗口处理：at/in 立即触发，cron 跳过本次）
   await initScheduler({

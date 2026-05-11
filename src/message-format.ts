@@ -4,7 +4,7 @@
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
-import type { MessageSection, OutgoingMessage, PanelMessage } from './transport.js'
+import type { InteractiveCardMessage, MessageSection, OutgoingMessage, PanelMessage } from './transport.js'
 
 const PANEL_MAX_CHARS = 12_000
 const PANEL_MAX_LINES = 120
@@ -70,8 +70,41 @@ export function structureSystemReply(text: string): OutgoingMessage {
   return panelMessage(title, sections)
 }
 
+/**
+ * 渲染 AI 反向提问为文本（飞书 + 微信共用 — 跨 transport 信息架构一致）。
+ *
+ * 五要素：
+ *   1) 标识：首行 🤔 Claude 想问你（可选 ❌ 卡片渲染失败标识）
+ *   2) 问题：question 主体
+ *   3) 选项：1) 2) 3) 编号列表
+ *   4) Other 入口：✏️ 直接回复编号或你的自定义答案（仅 allowFreeText=true）
+ *   5) 超时提示：⏱ N 分钟内未回复将自动继续
+ *
+ * 设计依据见 DESIGN_SYSTEM.md §2 跨 transport 一致性规范、ARCHITECTURE.md §5.3。
+ */
+export function buildAskUserText(message: InteractiveCardMessage): string {
+  const headerSuffix = message.degradedNote ? '（卡片渲染失败，已降级）' : ''
+  const lines: string[] = [`🤔 Claude 想问你${headerSuffix}`, '', message.question]
+
+  if (message.options.length > 0) {
+    lines.push('')
+    message.options.forEach((o, i) => lines.push(`  ${i + 1}) ${o.label}`))
+  }
+
+  const tail: string[] = []
+  if (message.allowFreeText) tail.push('✏️ 直接回复编号或你的自定义答案')
+  if (message.timeoutHint) tail.push(`⏱ ${message.timeoutHint}内未回复将自动继续`)
+  if (tail.length > 0) {
+    lines.push('')
+    lines.push(...tail)
+  }
+
+  return lines.join('\n').trim()
+}
+
 export function renderOutgoingMessageAsText(message: OutgoingMessage): string {
   if (message.kind === 'text') return message.text
+  if (message.kind === 'interactive_card') return buildAskUserText(message)
 
   const lines = [message.title]
   for (const section of message.sections) {
@@ -114,6 +147,15 @@ export function buildFeishuMessage(message: OutgoingMessage): { msgType: 'text' 
     return {
       msgType: 'text',
       content: JSON.stringify({ text: message.text }),
+    }
+  }
+
+  // interactive_card 不在此函数处理范围 — Phase 2 中由 feishu.ts 直接走 msg_type=interactive 路径。
+  // 调用方应在 sendMessage 入口分流；走到这里说明发生了未预期的降级，给出可见 fallback 文本。
+  if (message.kind === 'interactive_card') {
+    return {
+      msgType: 'text',
+      content: JSON.stringify({ text: renderOutgoingMessageAsText(message) }),
     }
   }
 

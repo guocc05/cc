@@ -31,12 +31,16 @@ export interface CreateSessionResult {
 
 export interface CreateSessionOptions {
   claudeProfile?: string
+  /** 关联的 IM 会话 — 用于 Claude AskUserQuestion PreToolUse hook 把问题路由回正确的 IM 通道 */
+  conversationId?: string
 }
 
 export interface SendMessageOptions {
   onSpawn?: (child: ChildProcess) => void
   outputFile?: string
   onTurnText?: (text: string) => void
+  /** 关联的 IM 会话 — 用于 Claude AskUserQuestion PreToolUse hook 把问题路由回正确的 IM 通道 */
+  conversationId?: string
 }
 
 /** session 文件位置状态 */

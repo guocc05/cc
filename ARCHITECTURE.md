@@ -104,6 +104,29 @@ daemon 通过 `claude -p` / `codex exec` 等非交互 flag 调用工具 CLI。**
 所有持久化的后台任务（schedule / cron / 订阅 / timer）必须提供 list / show / cancel / update / 触发回执，不只是创建入口。
 > 历史教训：把存储约束误当交互模型，造成"任务建了找不回"。
 
+### 4.7 远程交互的反向桥接强制（与 §4.5 互补）
+**引入**：`@20260510-im-askuserquestion-bridge` (2026-05-10)
+
+AI 工具在远程执行（IM 端经 daemon 调用）时若调用反向交互工具（典型代表：Claude 的 `AskUserQuestion`），不允许直接暴露非交互失败给用户——daemon 必须通过工具自身的 hook / 拦截机制接管，要么桥接到 IM 端，要么用注入答案优雅降级。
+
+具体落实在该 feature §Plan：Claude PreToolUse hook + 本地 unix socket + 飞书 interactive 卡片 / 微信文本降级。
+
+**约束**：
+- 不允许"daemon 直接吞错让任务静默失败"
+- 不允许"让 AI 看到工具不可用错误自行重试"导致循环
+- 任何新增反向交互工具（未来若出现 AskUserPermission 等）必须按本红线套路接管
+
+### 4.8 Gemini 进入维护模式
+**引入**：2026-05-10（项目级决策，非单 feature）
+
+Gemini 不再接受新功能开发，仅维持现有功能可用。原因：Gemini CLI 在远程交互场景下表现不稳定，长期投入 ROI 低。
+
+**具体规则**：
+- 新 feature 默认仅覆盖 Claude（+ Codex 视情况），Gemini 不在范围内
+- 现有 Gemini 路径出现 bug 仍修，但不为 Gemini 增加新能力
+- 相关 PR / spec 不再写"是否覆盖 Gemini"作为待确认项
+- 若需彻底下线，单开 feature 走 abandonment 流程
+
 ---
 
 ## 5. 跨 Feature 模式
@@ -149,6 +172,55 @@ interface ToolCapabilities {
 
 新增 IM 通道时，**必须实现 `downloadMedia`**；不实现则该通道不支持文件传输。
 
+### 5.3 IM 反向交互桥接（PreToolUse hook + IPC + 文本编号）
+**引入**：`@20260510-im-askuserquestion-bridge` (2026-05-10)
+**V1 spec 修订**：2026-05-11（飞书 interactive 卡片改走文本编号；详见 feature revision）
+
+**问题**：AI 工具（典型 Claude）在远程模式下调用 `AskUserQuestion` 等反向交互工具时，stdin 不可达，daemon 默认场景下任务会卡住或 AI 无限重试。
+
+**模式**：在工具自身的 PreToolUse hook 中拦截目标工具，通过本地 IPC（unix socket）与 daemon 沟通，daemon 渲染**统一文本格式**到 IM 端等待用户回复，回填 hook 让工具调用直接拿到"答案"。
+
+```
+AI 调用 AskUserQuestion
+    │
+    ▼
+Claude PreToolUse hook (hooks/askuser-hook.mjs，由 daemon 注入临时 settings.json)
+    │  ↕ unix socket (~/.im2cc/sockets/askuser.sock，权限 0700/0600)
+    ▼
+daemon askuser-bridge.ts
+    │
+    ▼ TransportAdapter.sendMessage(InteractiveCardMessage) → 内部降级 buildAskUserText 文本
+    │
+    ▼
+IM 端用户（飞书 + 微信完全一致格式）
+    │
+    ▼ 用户回 "1" / "JavaScript" / 自由文本（普通 text 路径）
+    │
+    ▼
+daemon handleMessage 检测当前 binding session 有 pending askuser → submitAnswerByToolUseId 注入
+    │
+    ▼ socket → hook → hookSpecificOutput.updatedInput.answers
+    ▼
+AI 收到"工具调用成功+答案"，继续推进
+```
+
+**关键约束**：
+- hook 命令默认超时 600s（10 分钟）—— **远程交互超时不可超 9 分钟**（默认 8）
+- 用 `permissionDecision: "allow" + updatedInput.answers` 回填，不用 `deny`（避免 AI 重试循环）
+- 超时降级：`answers` 注入 `[已超时] 用户未回复，请基于当前信息做合理假设并标注`，不让 AI 误以为是用户真实回答
+- daemon 重启 → Claude 进程随之死亡 → 复用 §inflight recovery 提示，不另造持久化
+- V1 飞书与微信都不依赖事件订阅 push（项目现有 REST 轮询模式不变）
+
+**扩展规则**：
+- 飞书 + 微信：统一文本格式（信息架构五要素：🤔 标识 / 问题 / 1) 2) 3) 编号选项 / ✏️ Other 入口 / ⏱ 超时提示）
+- transport 接收 `InteractiveCardMessage` 时内部降级 `buildAskUserText` 文本，调用方不感知
+- 新增 IM 通道：若想支持真按钮，需自建事件订阅子系统并实现 `kind:'card_action'` 路由；否则文本降级即可
+- 未来新增反向交互工具（如 AskUserPermission），复用本架构，仅在 hook matcher 上加目标工具名
+
+**V1.x 升级方向（不在 V1 范围）**：
+- 飞书 WSClient 长连接订阅 `card.action.trigger` 实现真"点按钮 + 卡片 update 已收到"体验
+- 评估前提：心跳/重连/错过事件补偿成本可接受
+
 ---
 
 ## 6. 验证管线
@@ -171,3 +243,4 @@ bash scripts/smoke.sh                              # 端到端冒烟（需活跃
 | 日期 | feature | 变更 |
 |---|---|---|
 | 2026-05-10 | @20260510-office-doc-relay | bootstrap ARCHITECTURE.md；引入 §5.1 ToolCapabilities-driven 文件处理策略；追溯文档化 §5.2 IM 文件暂存机制 |
+| 2026-05-10 | @20260510-im-askuserquestion-bridge | 引入 §4.7（远程交互反向桥接强制，与 §4.5 互补）；§4.8（Gemini 维护模式，项目级决策）；§5.3（IM 反向交互桥接架构：PreToolUse hook + IPC + transport 卡片） |

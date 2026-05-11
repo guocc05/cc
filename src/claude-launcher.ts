@@ -1,6 +1,6 @@
 /**
- * @input:    Im2ccConfig.claudeLauncher, Claude session/profile 上下文
- * @output:   Claude 启动器解析与 profile 选择辅助（默认直连 claude，本地可选 launcher 覆盖）
+ * @input:    Im2ccConfig.claudeLauncher, Claude session/profile 上下文, askUserQuestion 桥接信息（sessionId/conversationId）
+ * @output:   Claude 启动器解析、profile 选择 + injectAskUserHookSettings (PreToolUse hook 配置注入)
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -8,7 +8,14 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { loadConfig, type Im2ccConfig } from './config.js'
+import {
+  loadConfig,
+  getAskUserSocketPath,
+  getAskUserTimeoutMinutes,
+  getSessionDir,
+  type Im2ccConfig,
+} from './config.js'
+import { log } from './logger.js'
 
 export interface ClaudeLauncherContext {
   phase: 'select' | 'create' | 'send' | 'resume' | 'compat' | 'version'
@@ -85,6 +92,81 @@ export function buildClaudeInteractiveCommand(
   envPairs[0] = `IM2CC_CLAUDE_PHASE=${launcherEnv.IM2CC_CLAUDE_PHASE}`
 
   return ['env', ...envPairs, launcher, ...args]
+}
+
+/**
+ * 解析 hooks/askuser-hook.mjs 的绝对路径。
+ * dist/src/claude-launcher.js → ../../hooks/askuser-hook.mjs（npm 安装后 hooks/ 与 dist/ 同级）。
+ */
+export function resolveAskUserHookScript(): string {
+  return path.resolve(import.meta.dirname, '../../hooks/askuser-hook.mjs')
+}
+
+export interface AskUserHookInjection {
+  /** Claude `--settings <path>` 用 */
+  settingsPath: string
+  /** 注入到 Claude 子进程的环境变量（hook 读这些找 socket / 路由 IM） */
+  env: NodeJS.ProcessEnv
+}
+
+/**
+ * 在 ~/.im2cc/sessions/<sessionId>/settings.json 写入临时配置：
+ * - PreToolUse hook 拦截 AskUserQuestion 调用
+ * - 通过 unix socket 与 daemon askuser-bridge 通信
+ *
+ * 返回 settingsPath（给 Claude `--settings`）+ env（IM2CC_*）。
+ * 调用方负责把 env 合入 Claude 子进程的 env，并把 `--settings <path>` 加入 args。
+ *
+ * 若 hook 脚本不存在（例如安装不完整），返回 null —— 调用方应跳过 settings 注入，AI 会按默认行为
+ * 走（AskUserQuestion 在非交互 -p 模式下会失败，但至少不破坏现有流程）。
+ */
+export function injectAskUserHookSettings(opts: {
+  sessionId: string
+  conversationId: string
+}): AskUserHookInjection | null {
+  const hookScript = resolveAskUserHookScript()
+  if (!fs.existsSync(hookScript)) {
+    log(`[claude-launcher] askuser hook 脚本不存在，跳过注入: ${hookScript}`)
+    return null
+  }
+
+  // hook 脚本为 .mjs，无需 chmod；用 `node <script>` 调用
+  const sessionDir = getSessionDir(opts.sessionId)
+  const settingsPath = path.join(sessionDir, 'settings.json')
+
+  const settings = {
+    hooks: {
+      PreToolUse: [
+        {
+          matcher: 'AskUserQuestion',
+          hooks: [
+            {
+              type: 'command',
+              command: `node ${JSON.stringify(hookScript).slice(1, -1)}`,
+            },
+          ],
+        },
+      ],
+    },
+  }
+
+  try {
+    fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), { mode: 0o600 })
+  } catch (err) {
+    log(`[claude-launcher] 写入 settings.json 失败: ${(err as Error).message}`)
+    return null
+  }
+
+  const timeoutMs = getAskUserTimeoutMinutes() * 60 * 1000
+
+  const env: NodeJS.ProcessEnv = {
+    IM2CC_SESSION_ID: opts.sessionId,
+    IM2CC_CONVERSATION_ID: opts.conversationId,
+    IM2CC_ASKUSER_SOCKET: getAskUserSocketPath(),
+    IM2CC_ASKUSER_TIMEOUT_MS: String(timeoutMs),
+  }
+
+  return { settingsPath, env }
 }
 
 export function selectClaudeProfile(

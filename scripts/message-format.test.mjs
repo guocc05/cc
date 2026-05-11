@@ -64,3 +64,67 @@ test('buildFeishuMessage renders panel messages as post payloads', () => {
   assert.match(parsed.zh_cn.content[0][0].text, /\*\*状态：\*\*/)
   assert.match(parsed.zh_cn.content[1][0].text, /\*\*关闭\*\*/)
 })
+
+test('buildAskUserText renders five-element layout for AI question', () => {
+  const out = messageFormat.buildAskUserText({
+    kind: 'interactive_card',
+    cardId: 'c1',
+    question: '用 React 还是 Vue？',
+    options: [
+      { id: '1', label: 'React' },
+      { id: '2', label: 'Vue' },
+    ],
+    allowFreeText: true,
+    timeoutHint: '8 分钟',
+  })
+  // 五要素全要在
+  assert.match(out, /^🤔 Claude 想问你/, '首行标识')
+  assert.match(out, /用 React 还是 Vue？/, '问题主体')
+  assert.match(out, /1\) React/, '编号选项 1')
+  assert.match(out, /2\) Vue/, '编号选项 2')
+  assert.match(out, /✏️ 直接回复编号或你的自定义答案/, 'Other 入口')
+  assert.match(out, /⏱ 8 分钟内未回复将自动继续/, '超时提示')
+})
+
+test('buildAskUserText omits Other hint when allowFreeText=false', () => {
+  const out = messageFormat.buildAskUserText({
+    kind: 'interactive_card',
+    cardId: 'c2',
+    question: 'Q',
+    options: [{ id: '1', label: 'A' }],
+    allowFreeText: false,
+    timeoutHint: '5 分钟',
+  })
+  assert.doesNotMatch(out, /✏️/)
+  assert.match(out, /⏱ 5 分钟/)
+})
+
+test('buildAskUserText prefixes degraded note when degradedNote=true', () => {
+  const out = messageFormat.buildAskUserText({
+    kind: 'interactive_card',
+    cardId: 'c3',
+    question: 'Q',
+    options: [{ id: '1', label: 'A' }],
+    allowFreeText: true,
+    degradedNote: true,
+  })
+  assert.match(out, /^🤔 Claude 想问你（卡片渲染失败，已降级）/)
+})
+
+test('renderOutgoingMessageAsText routes interactive_card through buildAskUserText', () => {
+  const direct = messageFormat.buildAskUserText({
+    kind: 'interactive_card',
+    cardId: 'c4',
+    question: 'Q',
+    options: [{ id: '1', label: 'A' }],
+    allowFreeText: true,
+  })
+  const viaRender = messageFormat.renderOutgoingMessageAsText({
+    kind: 'interactive_card',
+    cardId: 'c4',
+    question: 'Q',
+    options: [{ id: '1', label: 'A' }],
+    allowFreeText: true,
+  })
+  assert.equal(viaRender, direct)
+})

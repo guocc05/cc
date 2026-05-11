@@ -1,6 +1,6 @@
 /**
- * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile), ~/.im2cc/wechat-account.json
- * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
+ * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile、askUserTimeoutMinutes), ~/.im2cc/wechat-account.json
+ * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), getAskUserSocketPath(), getAskUserTimeoutMinutes(), getSessionDir(), getSessionsRootDir(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -27,6 +27,7 @@ export interface Im2ccConfig {
   maxFileSizeMB: number         // 文件传输最大体积，默认 30（office 文档常较大）
   inboxTtlMinutes: number       // inbox 文件过期时间，默认 60
   pollIntervalMs: number        // REST 轮询间隔（毫秒），默认 5000
+  askUserTimeoutMinutes: number // AI AskUserQuestion 反向提问超时（分钟），默认 8，范围 1-9（受 Claude command hook 600s 硬上限约束）
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.im2cc')
@@ -39,6 +40,8 @@ const INFLIGHT_DIR = path.join(DATA_DIR, 'inflight')
 const PENDING_FILE = path.join(DATA_DIR, 'pending.json')
 const MESSAGE_DEDUP_DIR = path.join(DATA_DIR, 'message-dedup')
 const ANTI_POMODORO_FILE = path.join(DATA_DIR, 'anti-pomodoro.json')
+const SOCKETS_DIR = path.join(CONFIG_DIR, 'sockets')
+const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions')
 
 const DEFAULT_CONFIG: Im2ccConfig = {
   feishu: { appId: '', appSecret: '' },
@@ -51,7 +54,11 @@ const DEFAULT_CONFIG: Im2ccConfig = {
   maxFileSizeMB: 30,
   inboxTtlMinutes: 60,
   pollIntervalMs: 5000,
+  askUserTimeoutMinutes: 8,
 }
+
+const ASKUSER_TIMEOUT_MIN = 1
+const ASKUSER_TIMEOUT_MAX = 9
 
 function ensureDirs(): void {
   for (const dir of [CONFIG_DIR, DATA_DIR, LOG_DIR]) {
@@ -112,6 +119,34 @@ export function getMessageDedupDir(): string {
 }
 export function getAntiPomodoroFile(): string { ensureDirs(); return ANTI_POMODORO_FILE }
 
+/**
+ * 获取 AskUserQuestion 桥接 unix socket 路径。
+ * 目录权限 0700（仅当前用户可访问）。
+ */
+export function getAskUserSocketPath(): string {
+  ensureDirs()
+  if (!fs.existsSync(SOCKETS_DIR)) fs.mkdirSync(SOCKETS_DIR, { recursive: true, mode: 0o700 })
+  return path.join(SOCKETS_DIR, 'askuser.sock')
+}
+
+/**
+ * 获取某 session 的临时配置目录（用于写入 PreToolUse hook 的 settings.json）。
+ * 目录权限 0700。
+ */
+export function getSessionDir(sessionId: string): string {
+  ensureDirs()
+  if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 })
+  const dir = path.join(SESSIONS_DIR, sessionId)
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true, mode: 0o700 })
+  return dir
+}
+
+export function getSessionsRootDir(): string {
+  ensureDirs()
+  if (!fs.existsSync(SESSIONS_DIR)) fs.mkdirSync(SESSIONS_DIR, { recursive: true, mode: 0o700 })
+  return SESSIONS_DIR
+}
+
 // --- 默认模式 ---
 
 import { getBuiltinDefault, migrateLegacyMode, isValidMode } from './mode-policy.js'
@@ -133,6 +168,29 @@ export function getDefaultMode(tool: ToolId, config?: Im2ccConfig): string {
 
   // 3. 内置默认
   return getBuiltinDefault(tool)
+}
+
+/**
+ * 读取 AskUserQuestion 超时（分钟），夹紧到 [1, 9]。
+ * 越界时写日志告警（AC-9）。
+ */
+export function getAskUserTimeoutMinutes(config?: Im2ccConfig): number {
+  const cfg = config ?? loadConfig()
+  const raw = cfg.askUserTimeoutMinutes ?? DEFAULT_CONFIG.askUserTimeoutMinutes
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    console.warn(`[config] askUserTimeoutMinutes 非数字 (${String(raw)})，使用默认 ${DEFAULT_CONFIG.askUserTimeoutMinutes} 分钟`)
+    return DEFAULT_CONFIG.askUserTimeoutMinutes
+  }
+  const rounded = Math.round(raw)
+  if (rounded < ASKUSER_TIMEOUT_MIN) {
+    console.warn(`[config] askUserTimeoutMinutes=${raw} 低于下限 ${ASKUSER_TIMEOUT_MIN}，已夹紧`)
+    return ASKUSER_TIMEOUT_MIN
+  }
+  if (rounded > ASKUSER_TIMEOUT_MAX) {
+    console.warn(`[config] askUserTimeoutMinutes=${raw} 高于上限 ${ASKUSER_TIMEOUT_MAX}（受 Claude hook 600s 硬限制约束），已夹紧`)
+    return ASKUSER_TIMEOUT_MAX
+  }
+  return rounded
 }
 
 /** 设置工具的默认模式 */

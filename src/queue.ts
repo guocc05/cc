@@ -13,6 +13,7 @@ import { getBinding, updateBinding } from './session.js'
 import { getInflightDir, getPendingFile } from './config.js'
 import { formatOutput, formatError } from './output.js'
 import { log, error } from './logger.js'
+import { cancelBySessionId as cancelAskUserBySessionId } from './askuser-bridge.js'
 
 type JobState = 'idle' | 'busy' | 'cancelling'
 
@@ -398,6 +399,7 @@ async function processNext(
       binding.cwd,
       binding.permissionMode,
       {
+        conversationId,
         onSpawn: (child) => {
           group.currentChild = child
           if (child.pid) updateInflightPid(inflight.id, child.pid)
@@ -442,6 +444,11 @@ export async function handleStop(conversationId: string): Promise<string> {
   }
   group.state = 'cancelling'
   const binding = getBinding(conversationId)
+  // 优先取消挂起的 AskUserQuestion，让 hook 进程立即解除阻塞，
+  // 避免 driver.interrupt 后 hook 因 socket 没收到信号而依赖硬超时
+  if (binding) {
+    try { cancelAskUserBySessionId(binding.sessionId, 'user /stop') } catch {}
+  }
   const driver = binding ? getDriver(binding.tool ?? 'claude') : getDefaultDriver()
   await driver.interrupt(group.currentChild)
   // 不在此处设置 idle — processNext 的 finally 块会负责状态转换
@@ -522,6 +529,15 @@ export async function interruptInflightTasksForSession(sessionId: string, conver
   const dir = getInflightDir()
   const metaFiles = fs.readdirSync(dir).filter(f => f.endsWith('.meta.json'))
   let interrupted = 0
+
+  // 先取消同 session 下挂起的 AskUserQuestion 提问，让 hook 立即返回
+  // 避免被中断的 Claude 子进程因 hook 仍在 polling 而僵尸驻留
+  try {
+    const cancelled = cancelAskUserBySessionId(sessionId, 'session interrupted')
+    if (cancelled > 0) log(`[queue] 中断同时取消了 ${cancelled} 条挂起的 AskUserQuestion`)
+  } catch (err) {
+    log(`[queue] 取消 askuser pending 失败: ${(err as Error).message}`)
+  }
 
   for (const metaFile of metaFiles) {
     try {

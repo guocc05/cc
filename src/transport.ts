@@ -14,11 +14,20 @@ export interface IncomingMessage {
   transport: TransportType
   senderId: string
   /** `unsupported` 表示 transport 能看到但本系统暂不处理的消息类型（如飞书富文本 post），需要由 handleMessage 回复提示 */
-  kind: 'text' | 'file' | 'unsupported'
+  kind: 'text' | 'file' | 'unsupported' | 'card_action'
   text?: string
   fileKey?: string
   fileName?: string
   msgType?: 'image' | 'file'
+  /** 仅 kind='card_action' 时携带：用户在飞书 interactive 卡片上的回应 */
+  cardAction?: CardAction
+}
+
+/** 用户在 IM 交互卡片上的回应（飞书原生；微信不支持） */
+export interface CardAction {
+  cardId: string                    // daemon 生成 uuid，关联 outgoing card
+  selectedOptionId?: string         // 用户点了哪个 option（id）
+  freeText?: string                 // 用户输的自由文本（"Other"路径）
 }
 
 export interface MessageSection {
@@ -37,7 +46,23 @@ export interface PanelMessage {
   sections: MessageSection[]
 }
 
-export type OutgoingMessage = TextMessage | PanelMessage
+/**
+ * IM 交互卡片：用于 AI 反向提问场景。
+ * - 飞书：渲染为 interactive msg_type 卡片（蓝色 header + 垂直 button 列表）
+ * - 微信：transport 内部降级为编号文本（无可交互按钮）
+ */
+export interface InteractiveCardMessage {
+  kind: 'interactive_card'
+  cardId: string
+  question: string
+  options: Array<{ id: string; label: string }>
+  allowFreeText: boolean
+  timeoutHint?: string              // 显示文案，如 "8 分钟"
+  /** 卡片渲染失败时降级文本是否需要标注降级提示（AC-10） */
+  degradedNote?: boolean
+}
+
+export type OutgoingMessage = TextMessage | PanelMessage | InteractiveCardMessage
 
 /** Transport 适配器接口 */
 export interface TransportAdapter {

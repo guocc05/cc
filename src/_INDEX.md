@@ -12,7 +12,8 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - security.ts：IM 用户白名单检查、session 名称合法性校验、路径展开与存在性校验（不再承担"安全边界"语义，访问范围由 AI 工具自身的 permission mode 决定）
 - project-index.ts：从 registry.json 派生 IM 端项目索引（listProjectIndex/resolveProjectHint/suggestProjectLabels/prettyPath），用于 /ls 与 /fn 短名称解析
 - mode-policy.ts：模式注册表 — 每个工具的可用模式、中文描述、CLI 参数映射、默认模式、旧名迁移
-- claude-launcher.ts：Claude 本地启动器覆盖（可选 launcher 解析、profile 选择、环境变量透传）
+- claude-launcher.ts：Claude 本地启动器覆盖（可选 launcher 解析、profile 选择、环境变量透传），并提供 injectAskUserHookSettings — 给当前 session 写入 PreToolUse AskUserQuestion hook 配置 + IM2CC_* 环境变量
+- askuser-bridge.ts：Claude AskUserQuestion 反向提问桥接 — daemon 侧 unix socket IPC server（~/.im2cc/sockets/askuser.sock），与 hooks/askuser-hook.mjs 用 NDJSON 通信；维护 pending Q&A map、超时计时、cancel 传播；通过 EventEmitter 把 ask / answered / timeout / cancelled 事件透出给 daemon 主流程
 - tool-cli-args.ts：各工具交互式 CLI 参数映射（tmux create/resume + resume hint）
 - tool-compat.ts：工具 CLI 可选能力探测（例如 Claude 是否支持 `--name`）
 - upgrade.ts：安装模式识别（detectInstallRoot + InstallMode: npm-global / git-checkout / tarball / unknown），供 `im2cc update` 路由
