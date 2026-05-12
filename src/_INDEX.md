@@ -16,6 +16,7 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - askuser-bridge.ts：Claude AskUserQuestion 反向提问桥接 — daemon 侧 unix socket IPC server（~/.im2cc/sockets/askuser.sock），与 hooks/askuser-hook.mjs 用 NDJSON 通信；维护 pending Q&A map、超时计时、cancel 传播；通过 EventEmitter 把 ask / answered / timeout / cancelled 事件透出给 daemon 主流程
 - tool-cli-args.ts：各工具交互式 CLI 参数映射（tmux create/resume + resume hint）
 - tmux-util.ts：tmuxExactTarget(name) — 把 -t 包成 `=<name>` 强制精确匹配，避免 tmux 默认 prefix match 让前缀重合的 session 名互相干扰（ARCHITECTURE.md §4.2 红线，引入：@20260512-fc-tmux-client-preempt）
+- tmux-watcher.ts：诊断仪表 B — daemon 内每 10s `tmux list-sessions` diff 出消失的 im2cc-* session，写 `~/.im2cc/logs/tmux-watch.log` 带 registry/binding/inflight 上下文；纯旁观无副作用，配合 bin/im2cc.ts:fcTraceLog 互补（fc-trace 拿调用现场、tmux-watch 拿 idle 销毁现场），引入：@20260512-fc-tmux-client-preempt v1.1（注:此模块代码已就绪，daemon 挂载点延后随其他 feature commit 一并上线）
 - tool-compat.ts：工具 CLI 可选能力探测（例如 Claude 是否支持 `--name`）
 - upgrade.ts：安装模式识别（detectInstallRoot + InstallMode: npm-global / git-checkout / tarball / unknown），供 `im2cc update` 路由
 - shell-install.ts：shell rc 文件（.zshrc/.bashrc）的 im2cc 薄包装函数注入逻辑：marker 对、清理历史行、幂等替换；核心计算是纯函数，便于测试

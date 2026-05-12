@@ -248,6 +248,23 @@ switch (command) {
 `)
 }
 
+// ─── fc 诊断仪表(@20260512-fc-tmux-client-preempt v1.1) ────
+// 仅 fc/cmdConnect 调用路径写,采集 fc 调用瞬间的状态。daemon 端的 tmux session
+// 生灭由 src/tmux-watcher.ts 旁观,两者互补:fc-trace 拿调用现场,tmux-watch
+// 拿 idle 销毁现场。
+function fcTraceLog(event: string, fields: Record<string, unknown>): void {
+  try {
+    const logPath = path.join(getLogDir(), 'fc-trace.log')
+    const ts = new Date().toISOString()
+    const flat = Object.entries(fields)
+      .map(([k, v]) => `${k}=${typeof v === 'string' ? JSON.stringify(v) : JSON.stringify(v)}`)
+      .join(' ')
+    fs.appendFileSync(logPath, `[${ts}] ${event} ${flat}\n`)
+  } catch {
+    // 仪表自身不应影响主流程
+  }
+}
+
 // ─── tmux 辅助 ───────────────────────────────────────
 
 /** 检查 tmux session 是否存在 */
@@ -893,8 +910,15 @@ async function cmdConnect(): Promise<void> {
   }
 
   // 单参数模式: connect <名称>
+  fcTraceLog('fc.enter', {
+    target,
+    pid: process.pid,
+    ppid: process.ppid,
+    tmuxEnv: process.env.TMUX ?? null,
+  })
   let session = lookup(target)
   if (!session) {
+    fcTraceLog('fc.lookup_miss', { target })
     console.log(`未找到 "${target}"`)
     const all = listRegistered()
     if (all.length > 0) {
@@ -951,10 +975,23 @@ async function cmdConnect(): Promise<void> {
 
   const inflightTasks = listInflightTasksForSession(session.sessionId)
   const hasInflight = inflightTasks.length > 0
+  const bindingsBefore = listActiveBindings().length
+  fcTraceLog('fc.pre_release', {
+    sessionName: session.name,
+    sessionId: session.sessionId,
+    tool,
+    bindingsBefore,
+    inflightCount: inflightTasks.length,
+  })
 
   // 独占：解绑远程端；如果旧任务仍在执行，则进入保护态而不是直接中断
   const handoff = await releaseRemoteBinding(session.sessionId, session.name, {
     interruptInflight: !hasInflight,
+  })
+  fcTraceLog('fc.post_release', {
+    sessionName: session.name,
+    transport: handoff.transport,
+    interrupted: handoff.interrupted,
   })
   if (hasInflight) {
     await runDesktopHandoffProtection(
@@ -967,7 +1004,17 @@ async function cmdConnect(): Promise<void> {
 
   // 查找已有 tmux session
   const tmux = findTmuxSession(session.name, tool)
+  const newFormatExists = tmuxSessionExists(`im2cc-${tool}-${session.name}`)
+  const oldFormatExists = tmuxSessionExists(`im2cc-${session.name}`)
+  fcTraceLog('fc.find_tmux', {
+    sessionName: session.name,
+    tool,
+    findResult: tmux,
+    newFormatExists,
+    oldFormatExists,
+  })
   if (tmux) {
+    fcTraceLog('fc.branch.attach_existing', { sessionName: session.name, tmuxSession: tmux })
     console.log(`接入 "${session.name}" (活跃)`)
     tmuxConnect(tmux)
     return
@@ -990,6 +1037,13 @@ async function cmdConnect(): Promise<void> {
     ? toolResumeArgs(tool as ToolId, session.sessionId, session.name, { claudeProfile: session.claudeProfile, permissionMode })
     : toolCreateArgs(tool as ToolId, session.sessionId, session.name, { claudeProfile: session.claudeProfile, permissionMode })
 
+  fcTraceLog('fc.branch.new_create', {
+    sessionName: session.name,
+    tmuxSession,
+    cwd: session.cwd,
+    claudeStatus: status,
+    cmdArgs,
+  })
   console.log(`恢复 "${session.name}" → ${path.basename(session.cwd)}`)
 
   try {
@@ -997,8 +1051,18 @@ async function cmdConnect(): Promise<void> {
       'new-session', '-d', '-s', tmuxSession, '-c', session.cwd,
       ...cmdArgs,
     ])
+    fcTraceLog('fc.new_session.ok', { tmuxSession })
     tmuxConnect(tmuxSession)
-  } catch {
+    fcTraceLog('fc.connect_returned', { tmuxSession, tmuxEnv: process.env.TMUX ?? null })
+  } catch (err) {
+    // tmux new-session 失败:可能是同名 session 存在、tmux server 不可用,或 cmdArgs 报错。
+    // 之前是空 catch 完全吞错;现在记录后再回退到 fallback。
+    fcTraceLog('fc.new_session.fail', {
+      tmuxSession,
+      error: err instanceof Error ? err.message : String(err),
+      code: (err as { code?: string })?.code ?? null,
+      stderr: (err as { stderr?: Buffer })?.stderr?.toString().slice(0, 500) ?? null,
+    })
     // tmux 不可用，直接启动
     execFileSync(cmdArgs[0], cmdArgs.slice(1), { stdio: 'inherit', cwd: session.cwd })
   }
