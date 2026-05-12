@@ -10,6 +10,7 @@
 - [x] fix — classifyFile 无扩展名早返回，遮蔽 Dockerfile/Makefile 分类 — `@20260510-fix-classify-no-ext-shadow`
 - [ ] IM 端透传 AI 工具内置斜杠命令 — `@20260510-im-slash-passthrough`
 - [x] IM 端处理 AI 工具反向提问（AskUserQuestion 桥接） — `@20260510-im-askuserquestion-bridge`
+- [x] tech — 飞书轮询 per-chat 自适应退避（消除空轮询 API 量放大） — `@20260511-feishu-poll-adaptive-backoff`
 
 ## Archive
 
@@ -41,6 +42,9 @@
 | 2026-05-10 | builder | @20260510-im-askuserquestion-bridge Phase 1 完成（IPC socket + hook + transport 接口 + 配置 + claude-launcher 注入 + queue cancel 广播）；新增 7 个单测；147 全套测试零回归 |
 | 2026-05-11 | builder | @20260510-im-askuserquestion-bridge Phase 2+3 完成（spec 修订：调研后飞书 interactive 卡片撤销，改文本编号格式；信息架构跨 transport 一致；保留 InteractiveCardMessage 类型供 V1.x 升级）；ARCHITECTURE/DESIGN_SYSTEM 同步；151 全套测试零回归 |
 | 2026-05-11 | builder | @20260510-im-askuserquestion-bridge → done；端到端飞书+微信单/多 question 全过；commit 47bd061；AC-5/6/7/9 deferred；AC-10 not_applicable；ExecPlan → completed |
+| 2026-05-11 | go | 登记 @20260511-feishu-poll-adaptive-backoff (Unscheduled, M, tech)；用户报告飞书 API 月调用异常（11 天 ~48 万）；考古确认 commit 7c2577b 当年因 17h 静默断连放弃 WebSocket；放大模型对账：9s 轮询节奏 × 7 群 × 65% 运行率 × 11 天 ≈ 48 万 ✅；用户选 B+（per-chat 自适应退避，目标 ≤2 万/月）；route=/builder |
+| 2026-05-11 | builder | @20260511-feishu-poll-adaptive-backoff → done；preflight 通过（ARCHITECTURE L212 允许 REST 模式不变）；新增 computeNextDelayMs + chatPollState + pollOnce 抽方法；7 个新单测；feishu.test.mjs 14/14；全套 25 个 .test.mjs 零回归；AC-1..AC-7 全 passed |
+| 2026-05-12 | builder | @20260511-feishu-poll-adaptive-backoff 部署后 bug 修复：cursor 秒级边界导致幽灵消息反复重置 idle → 加 lastMaxCreateTime 毫秒级比较；测试隔离 hook 避免污染真实 cursors；9 小时端到端实跑 443 次 API/9h ≈ 23k/月（命中 AC-1 ≤2 万/月，对比修复前 48 万/11 天 降 ~21 倍）；feishu.test.mjs 15/15，全套 25/25 零回归 |
 
 ---
 

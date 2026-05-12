@@ -1,6 +1,6 @@
 /**
  * @input:    飞书 App 凭证, REST API (im.message.list, im.chat.list)
- * @output:   FeishuAdapter (TransportAdapter) — 飞书 REST 轮询、消息收发、资源下载
+ * @output:   FeishuAdapter (TransportAdapter) — 飞书 REST 轮询（per-chat 自适应退避）、消息收发、资源下载
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -21,6 +21,41 @@ interface BotChat { chatId: string }
 const FEISHU_REQUEST_TIMEOUT_MS = 15_000
 type FeishuDomainTarget = 'feishu' | 'lark'
 
+// --- per-chat 自适应退避（消除空轮询）@20260511-feishu-poll-adaptive-backoff ---
+
+export interface ChatPollState {
+  /** 最近真有新消息进来的时刻 ms（或首次发现该群的时刻） */
+  lastActiveAt: number
+  /** 下次允许 fetch 的时刻 ms；now < nextFireAt 时本轮跳过该群 */
+  nextFireAt: number
+  /**
+   * 上次 fetch 到的最大 create_time（毫秒，飞书原生精度）。
+   * 用于区分"真新消息"vs"cursor 秒级精度边界导致的重复拉取"——
+   * cursor 持久化时被截到秒，但 create_time 是毫秒。
+   * `start_time` 是闭区间，所以同一秒的消息可能反复出现在 items 中。
+   * 仅当本轮某 item 的 create_time > lastMaxCreateTime 时，视为"真活跃"。
+   */
+  lastMaxCreateTime: number
+}
+
+/**
+ * 按"距上次活跃多久"切档的轮询间隔梯度。
+ * 7 群放大场景下，闲群退避到 120s 可把月调用量从 ~48 万降到 ~1-2 万。
+ */
+export const BACKOFF_TIERS = [
+  { idleBelowMs: 5 * 60_000,      intervalMs: 5_000 },   // < 5min: 5s
+  { idleBelowMs: 30 * 60_000,     intervalMs: 30_000 },  // 5-30min: 30s
+  { idleBelowMs: 2 * 3600_000,    intervalMs: 60_000 },  // 30min-2h: 60s
+  { idleBelowMs: Number.POSITIVE_INFINITY, intervalMs: 120_000 }, // 2h+: 120s
+] as const
+
+export function computeNextDelayMs(idleMs: number): number {
+  for (const tier of BACKOFF_TIERS) {
+    if (idleMs < tier.idleBelowMs) return tier.intervalMs
+  }
+  return BACKOFF_TIERS[BACKOFF_TIERS.length - 1].intervalMs
+}
+
 export class FeishuAdapter implements TransportAdapter {
   readonly type = 'feishu' as const
   private client: lark.Client
@@ -28,6 +63,8 @@ export class FeishuAdapter implements TransportAdapter {
   private cachedChats: BotChat[] = []
   private chatsCachedAt = 0
   private readonly CHAT_CACHE_TTL = 5 * 60 * 1000
+  /** per-chat 自适应退避状态（in-memory，daemon 重启清零，重启后所有 chat 当作新发现，立即拉一轮 catch-up） */
+  private chatPollState = new Map<string, ChatPollState>()
   // lark 域回切：低频后台 probe + 连续成功才切回，避免 DNS 间歇性故障下抖动
   private feishuRecoveryTimer: NodeJS.Timeout | null = null
   private feishuConsecutiveOk = 0
@@ -56,45 +93,12 @@ export class FeishuAdapter implements TransportAdapter {
 
     const pollIntervalMs = this.config.pollIntervalMs
 
-    const pollOnce = async (): Promise<void> => {
-      try {
-        const chats = await this.refreshBotGroups()
-        for (const chat of chats) {
-          try {
-            const items = await this.fetchGroupMessages(chat.chatId)
-            if (items.length === 0) continue
-
-            let maxCreateTime = 0
-            for (const item of items) {
-              const msg = this.parseRestMessage(item)
-              if (msg) {
-                try { await onMessage(msg) } catch (err) {
-                  error(`[poll] 处理消息出错 [${chat.chatId}]: ${err}`)
-                }
-              }
-              const ct = parseInt((item.create_time as string) ?? '0', 10)
-              if (ct > maxCreateTime) maxCreateTime = ct
-            }
-
-            if (maxCreateTime > 0) {
-              // 不做 +1，避免跳过同一秒内的后续消息。isDuplicate 负责去重。
-              setCursor(chat.chatId, Math.floor(maxCreateTime / 1000).toString())
-            }
-          } catch (err) {
-            error(`[poll] 拉取群 ${chat.chatId} 消息失败: ${err}`)
-          }
-        }
-      } catch (err) {
-        error(`[poll] 轮询失败: ${err}`)
-      }
-    }
-
     let pollCount = 0
     const pollLoop = (): void => {
       pollCount++
       const n = pollCount
       log(`[feishu] poll #${n} 开始`)
-      pollOnce()
+      this.pollOnce(onMessage)
         .then(() => log(`[feishu] poll #${n} 完成`))
         .catch(err => error(`[feishu] poll #${n} 错误: ${err}`))
         .finally(() => {
@@ -103,8 +107,95 @@ export class FeishuAdapter implements TransportAdapter {
         })
     }
 
-    log(`[feishu] 启动 REST 轮询 (间隔 ${pollIntervalMs}ms)`)
+    log(`[feishu] 启动 REST 轮询 (tick ${pollIntervalMs}ms, per-chat 自适应退避 5/30/60/120s)`)
     setTimeout(pollLoop, pollIntervalMs)
+  }
+
+  /**
+   * 单次轮询：按 per-chat 自适应退避策略，只 fetch 到期的 chat。
+   *
+   * 状态机：
+   * - 新发现的 chat：lastActiveAt=now, nextFireAt=now → 立即拉一轮 catch-up
+   * - fetch 拿到消息：lastActiveAt 重置为 now（回到 5s 档）
+   * - fetch 无消息：lastActiveAt 不动，按 idleMs 切档退避
+   * - fetch 失败：按当前 idleMs 推进 nextFireAt（避免连击失败群）
+   *
+   * 抽为类方法是为了让单测能通过 monkey-patch refreshBotGroups + fetchGroupMessages 直接驱动。
+   */
+  async pollOnce(onMessage: (msg: IncomingMessage) => Promise<void>): Promise<void> {
+    try {
+      const chats = await this.refreshBotGroups()
+      const now = Date.now()
+
+      // 同步 chatPollState 与当前 chat 列表
+      const seen = new Set<string>()
+      for (const chat of chats) {
+        seen.add(chat.chatId)
+        if (!this.chatPollState.has(chat.chatId)) {
+          // 新发现：立即拉一轮 catch-up（覆盖 daemon 启动 / 加入新群 两种场景）
+          this.chatPollState.set(chat.chatId, { lastActiveAt: now, nextFireAt: now, lastMaxCreateTime: 0 })
+        }
+      }
+      for (const id of this.chatPollState.keys()) {
+        if (!seen.has(id)) this.chatPollState.delete(id)
+      }
+
+      let fetched = 0
+      let skipped = 0
+      for (const chat of chats) {
+        const state = this.chatPollState.get(chat.chatId)!
+        if (Date.now() < state.nextFireAt) { skipped++; continue }
+        fetched++
+
+        try {
+          const items = await this.fetchGroupMessages(chat.chatId)
+          const fetchedAt = Date.now()
+
+          // 算本轮最大 create_time（毫秒，飞书原生精度）
+          let maxCreateTime = 0
+          for (const item of items) {
+            const ct = parseInt((item.create_time as string) ?? '0', 10)
+            if (ct > maxCreateTime) maxCreateTime = ct
+          }
+
+          // 关键：用毫秒精度比较"真新消息"vs"cursor 秒级边界重复"。
+          // cursor 持久化是秒级（不做 +1，靠 isDuplicate 去重），所以同一秒内的
+          // 消息会反复出现在 items 中——不能仅凭 items.length>0 就判定"群活跃"，
+          // 否则 idle 永远是 0，退避档进不去（@20260511 已踩过的坑）。
+          const hasNewActivity = maxCreateTime > state.lastMaxCreateTime
+          if (hasNewActivity) {
+            state.lastActiveAt = fetchedAt
+            state.lastMaxCreateTime = maxCreateTime
+          }
+          state.nextFireAt = fetchedAt + computeNextDelayMs(fetchedAt - state.lastActiveAt)
+
+          if (items.length === 0) continue
+
+          // 处理消息（onMessage 内部用 isDuplicate 去重，重复拉到的消息不会被重复处理）
+          for (const item of items) {
+            const msg = this.parseRestMessage(item)
+            if (msg) {
+              try { await onMessage(msg) } catch (err) {
+                error(`[poll] 处理消息出错 [${chat.chatId}]: ${err}`)
+              }
+            }
+          }
+
+          if (maxCreateTime > 0) {
+            // 不做 +1，避免跳过同一秒内的后续消息。isDuplicate 负责去重。
+            setCursor(chat.chatId, Math.floor(maxCreateTime / 1000).toString())
+          }
+        } catch (err) {
+          error(`[poll] 拉取群 ${chat.chatId} 消息失败: ${err}`)
+          // 失败时也按当前 idleMs 推进 nextFireAt，避免下一 tick 立即重连失败群
+          const failedAt = Date.now()
+          state.nextFireAt = failedAt + computeNextDelayMs(failedAt - state.lastActiveAt)
+        }
+      }
+      log(`[feishu] poll 统计: fetched=${fetched} skipped=${skipped} total=${chats.length}`)
+    } catch (err) {
+      error(`[poll] 轮询失败: ${err}`)
+    }
   }
 
   /** 给消息添加表情回应（确认收到） */
