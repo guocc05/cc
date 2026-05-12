@@ -111,6 +111,7 @@ export class ClaudeDriver extends BaseToolDriver {
       onSpawn: opts?.onSpawn,
       outputFile: opts?.outputFile,
       onTurnText: opts?.onTurnText,
+      onTurnEvent: opts?.onTurnEvent,
     })
   }
 

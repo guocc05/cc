@@ -47,6 +47,7 @@ im2cc 是 CLI + IM 双 surface 工具：
 | `🤔` | **AI 提问（等回答）** | AI 调用 AskUserQuestion 类反向交互 | **"AI 在等我"** | @20260510-im-askuserquestion-bridge |
 | `✏️` | Other / 自由输入引导 | 提问卡片中提示用户可自由回答 | "我可以自己说" | @20260510-im-askuserquestion-bridge |
 | `⏱` | 超时倒计时提示 | 卡片中显示等待上限 | "我得在 X 时间内答" | @20260510-im-askuserquestion-bridge |
+| `⚙️` | **AI 工具调用进行中状态** | 长 tool 调用 (≥10s) daemon 主动 push 进度 | **"AI 正在工作,等一下"** | @20260512-im-tool-call-progress |
 
 **禁止**：
 - 不允许同一消息类型在不同上下文用不同 emoji
@@ -152,3 +153,4 @@ im2cc 是 CLI + IM 双 surface 工具：
 |---|---|---|
 | 2026-05-10 | @20260510-im-askuserquestion-bridge | bootstrap DESIGN_SYSTEM.md；§1 项目设计原则；§2 IM 消息视觉语言（emoji prefix 体系 + 飞书消息形式选择 + 微信降级 + 跨 transport 一致性）；§3 CLI 命令习惯（追溯文档化）；新增 emoji 🤔 ✏️ ⏱（提问交互），追溯既有 ⏳ ✅ ❌ ⚠️ ⏰ 🕐 |
 | 2026-05-11 | @20260510-im-askuserquestion-bridge | V1 飞书 interactive 卡片暂缓 — 调研后决策飞书与微信均走 text 编号格式（信息架构一致）；§2.2 标记 interactive 暂不使用 + 写入暂缓理由；§2.4 跨 transport 一致性表新增 V1 / V1.x 双列对照 |
+| 2026-05-12 | @20260512-im-tool-call-progress | §2.1 emoji 表追加 ⚙️ (AI 工具调用进行中状态) — 与 🤔 (反向提问) 形成"AI 在工作中 vs AI 等用户" 二元对照;V1 飞书 + 微信都走 text 与 askuserquestion-bridge 一致;文案模板 4 档 (单/多/总数>3/重复 N 次) 跨 transport 一致 |

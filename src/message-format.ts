@@ -4,7 +4,7 @@
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
-import type { InteractiveCardMessage, MessageSection, OutgoingMessage, PanelMessage } from './transport.js'
+import type { InteractiveCardMessage, MessageSection, OutgoingMessage, PanelMessage, ToolStatusMessage } from './transport.js'
 
 const PANEL_MAX_CHARS = 12_000
 const PANEL_MAX_LINES = 120
@@ -102,9 +102,39 @@ export function buildAskUserText(message: InteractiveCardMessage): string {
   return lines.join('\n').trim()
 }
 
+/**
+ * AI 工具调用状态消息文案（飞书 + 微信完全一致，跨 transport 信息架构原则）。
+ *
+ * 4 档模板（按优先级）:
+ *   1. names=1 且 count=1: ⚙️ 正在执行 <name>
+ *   2. names=1 且 count>1: ⚙️ 正在执行 <name> (共 N 次)
+ *   3. names∈[2,3]:        ⚙️ 正在执行 <n1>, <n2>, ...
+ *   4. names>3:            ⚙️ 正在执行 <n1>, <n2>, <n3> 等 N 项 (N=count)
+ *
+ * 引入: @20260512-im-tool-call-progress (DESIGN_SYSTEM §2.1 ⚙️)
+ */
+export function buildToolStatusText(message: ToolStatusMessage): string {
+  const names = message.toolNames
+  const count = message.toolCount
+
+  if (names.length === 1 && count === 1) {
+    return `⚙️ 正在执行 ${names[0]}`
+  }
+  if (names.length === 1 && count > 1) {
+    return `⚙️ 正在执行 ${names[0]} (共 ${count} 次)`
+  }
+  if (names.length >= 2 && names.length <= 3) {
+    return `⚙️ 正在执行 ${names.join(', ')}`
+  }
+  // names.length > 3
+  const head = names.slice(0, 3).join(', ')
+  return `⚙️ 正在执行 ${head} 等 ${count} 项`
+}
+
 export function renderOutgoingMessageAsText(message: OutgoingMessage): string {
   if (message.kind === 'text') return message.text
   if (message.kind === 'interactive_card') return buildAskUserText(message)
+  if (message.kind === 'tool_status') return buildToolStatusText(message)
 
   const lines = [message.title]
   for (const section of message.sections) {
@@ -156,6 +186,14 @@ export function buildFeishuMessage(message: OutgoingMessage): { msgType: 'text' 
     return {
       msgType: 'text',
       content: JSON.stringify({ text: renderOutgoingMessageAsText(message) }),
+    }
+  }
+
+  // tool_status 跨 transport 完全一致,直接走 text msg_type（@20260512-im-tool-call-progress）
+  if (message.kind === 'tool_status') {
+    return {
+      msgType: 'text',
+      content: JSON.stringify({ text: buildToolStatusText(message) }),
     }
   }
 

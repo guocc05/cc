@@ -14,6 +14,9 @@ import { getInflightDir, getPendingFile } from './config.js'
 import { formatOutput, formatError } from './output.js'
 import { log, error } from './logger.js'
 import { cancelBySessionId as cancelAskUserBySessionId } from './askuser-bridge.js'
+import { createTurnAggregator, type AggregatorAction } from './turn-aggregator.js'
+import { loadConfig } from './config.js'
+import type { OutgoingMessage } from './transport.js'
 
 type JobState = 'idle' | 'busy' | 'cancelling'
 
@@ -22,7 +25,8 @@ interface QueuedMessage {
   text: string
   resolve: (result: string) => void
   reject: (err: Error) => void
-  sendReply: (text: string) => Promise<void>
+  /** 接受纯文本或结构化消息（@20260512-im-tool-call-progress 引入 OutgoingMessage 支持以发 tool_status） */
+  sendReply: (message: string | OutgoingMessage) => Promise<void>
   expectedSessionId: string | null
 }
 
@@ -285,12 +289,12 @@ function isQueuedMessageStillAttached(msg: QueuedMessage): boolean {
   return true
 }
 
-async function sendQueuedReplyIfAttached(msg: QueuedMessage, text: string): Promise<void> {
+async function sendQueuedReplyIfAttached(msg: QueuedMessage, payload: string | OutgoingMessage): Promise<void> {
   if (!isQueuedMessageStillAttached(msg)) {
     log(`[${msg.conversationId}] 结果已丢弃：远程连接已断开或已切换到其他对话`)
     return
   }
-  await msg.sendReply(text)
+  await msg.sendReply(payload)
 }
 
 /**
@@ -315,7 +319,7 @@ function catchProcessError(conversationId: string, label: string): (err: unknown
 export function enqueue(
   conversationId: string,
   text: string,
-  sendReply: (text: string) => Promise<void>,
+  sendReply: (message: string | OutgoingMessage) => Promise<void>,
 ): void {
   const group = getGroup(conversationId)
   const binding = getBinding(conversationId)
@@ -361,7 +365,7 @@ export function enqueue(
 /** 处理队列中的下一条消息 */
 async function processNext(
   conversationId: string,
-  sendReply: (text: string) => Promise<void>,
+  sendReply: (message: string | OutgoingMessage) => Promise<void>,
 ): Promise<void> {
   const group = getGroup(conversationId)
   const msg = group.queue.shift()
@@ -391,6 +395,37 @@ async function processNext(
   let streamed = false
   let completionStatus: CompletedInflightStatus = 'completed'
   let completionPreview = ''
+  // @20260512-im-tool-call-progress: V1 仅 Claude 启用 aggregator;其他工具走旧 onTurnText 路径
+  const useAggregator = (binding.tool ?? 'claude') === 'claude'
+  const aggregatorCfg = loadConfig().toolCallStatus
+  const aggregator = useAggregator ? createTurnAggregator({
+    config: {
+      textDebounceMs: aggregatorCfg?.textDebounceMs,
+      statusThresholdMs: aggregatorCfg?.statusThresholdMs,
+    },
+  }) : null
+
+  // msg / binding 已在上方 null-check 过;capture 到局部 const 让 closure 内类型保留 narrow
+  const msgRef: QueuedMessage = msg
+  const bindingRef = binding
+
+  function dispatchActions(actions: AggregatorAction[]): void {
+    for (const action of actions) {
+      streamed = true
+      if (action.kind === 'send_text') {
+        sendQueuedReplyIfAttached(msgRef, formatOutput(action.text, bindingRef.sessionId, bindingRef.transport, bindingRef.tool))
+          .catch(err => error(`[queue] 流式回复发送失败 [${conversationId}]: ${err}`))
+      } else if (action.kind === 'send_tool_status') {
+        sendQueuedReplyIfAttached(msgRef, {
+          kind: 'tool_status',
+          toolNames: action.toolNames,
+          toolCount: action.toolCount,
+        })
+          .catch(err => error(`[queue] tool_status 发送失败 [${conversationId}]: ${err}`))
+      }
+    }
+  }
+
   try {
     const driver = getDriver(binding.tool ?? 'claude')
     const output = await driver.sendMessage(
@@ -405,13 +440,23 @@ async function processNext(
           if (child.pid) updateInflightPid(inflight.id, child.pid)
         },
         outputFile,
-        onTurnText: (text) => {
+        // aggregator 启用时,onTurnEvent 消费事件并 dispatch 动作;否则走 onTurnText 旧路径
+        onTurnEvent: aggregator ? (event) => {
+          const actions = aggregator.consume(event)
+          dispatchActions(actions)
+        } : undefined,
+        onTurnText: aggregator ? undefined : (text) => {
           streamed = true
           sendQueuedReplyIfAttached(msg, formatOutput(text, binding.sessionId, binding.transport, binding.tool))
             .catch(err => error(`[queue] 流式回复发送失败 [${conversationId}]: ${err}`))
         },
       },
     )
+
+    // turn 结束后:若 aggregator 还有未派出的缓冲,强制 flush（防御性,turn_end 应已派出）
+    if (aggregator && !aggregator.isTurnEnded()) {
+      dispatchActions(aggregator.flush())
+    }
 
     updateBinding(conversationId, { turnCount: binding.turnCount + 1 })
     completionPreview = output
@@ -464,7 +509,7 @@ export function getQueueStatus(conversationId: string): { state: JobState; queue
 /** 启动时恢复：发送上次未完成的 inflight 结果 + 重新入队 pending 消息 */
 export async function recoverOnStartup(
   sendToGroup: (conversationId: string, text: string) => Promise<void>,
-  makeSendReply: (conversationId: string) => (text: string) => Promise<void>,
+  makeSendReply: (conversationId: string) => (message: string | OutgoingMessage) => Promise<void>,
 ): Promise<void> {
   // 1. 恢复 inflight 任务的结果
   const dir = getInflightDir()

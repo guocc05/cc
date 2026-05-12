@@ -117,6 +117,23 @@ AI 工具在远程执行（IM 端经 daemon 调用）时若调用反向交互工
 - 不允许"让 AI 看到工具不可用错误自行重试"导致循环
 - 任何新增反向交互工具（未来若出现 AskUserPermission 等）必须按本红线套路接管
 
+### 4.9 远程执行的工具调用进度反馈 (与 §4.7 互补)
+**引入**: `@20260512-im-tool-call-progress` (2026-05-12)
+
+远程执行 (IM 端经 daemon 调用) 的 AI 工具调用过程必须对 IM 用户有进度可见性,避免"冒号收尾空白" / "AI 卡壳" 误判:
+
+- 短 turn 内 (单 tool 调用 < 10s) 的 tool_use 边界由 daemon **透明合并** AI 文本输出,用户感知不到工具调用
+- 长 tool_use (≥ 10s 阈值,默认值,可在 config.toolCallStatus.statusThresholdMs 覆盖) 必须发**状态消息**给 IM,避免用户判 daemon 失联
+- 整个 turn 内最多发 **1 条状态消息**,避免轰炸
+- daemon 不允许直接转发工具 raw stdout (与 §4.5 互补)
+
+具体落实在 `src/turn-aggregator.ts` 状态机:`buffering / tool_running / turn_end` 三态 + debounce 1.5s + threshold 10s。
+
+**约束**:
+- 与 §4.7 反向交互桥接 (AskUserQuestion) 共同构成 "im2cc 端到端工具调用透明度"
+- AskUserQuestion 走 PreToolUse hook 绕过 base-driver,aggregator 显式跳过 name='AskUserQuestion' 的 tool_use,与 §4.7 互不冲突
+- 任何新增 AI 工具 driver 必须接入 onTurnEvent 事件流,不能只发 raw text
+
 ### 4.8 Gemini 进入维护模式
 **引入**：2026-05-10（项目级决策，非单 feature）
 

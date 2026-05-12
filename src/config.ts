@@ -28,6 +28,14 @@ export interface Im2ccConfig {
   inboxTtlMinutes: number       // inbox 文件过期时间，默认 60
   pollIntervalMs: number        // REST 轮询间隔（毫秒），默认 5000
   askUserTimeoutMinutes: number // AI AskUserQuestion 反向提问超时（分钟），默认 8，范围 1-9（受 Claude command hook 600s 硬上限约束）
+  /**
+   * IM 端工具调用进度可视化（@20260512-im-tool-call-progress, ARCHITECTURE §4.9）。
+   * 缺省时使用 DEFAULT_AGGREGATOR_CONFIG (1500/5000ms)。
+   */
+  toolCallStatus?: {
+    textDebounceMs?: number     // 默认 1500
+    statusThresholdMs?: number  // 默认 5000
+  }
 }
 
 const CONFIG_DIR = path.join(os.homedir(), '.im2cc')

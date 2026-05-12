@@ -566,7 +566,8 @@ export async function startDaemon(): Promise<void> {
         conversationId,
         prompt,
         async (reply) => {
-          if (queueDelayedReply(conversationId, reply)) return
+          // OutgoingMessage (含 tool_status) 跳过反茄钟延迟队列,实时发送（@20260512-im-tool-call-progress）
+          if (typeof reply === 'string' && queueDelayedReply(conversationId, reply)) return
           await send(reply)
         },
       )
@@ -639,9 +640,14 @@ export async function startDaemon(): Promise<void> {
       if (queueDelayedReply(conversationId, text)) return
       await sendByConversationId(conversationId, text)
     },
-    (conversationId) => async (text: string) => {
-      if (queueDelayedReply(conversationId, text)) return
-      await sendByConversationId(conversationId, text)
+    (conversationId) => async (message) => {
+      // @20260512-im-tool-call-progress: 支持 OutgoingMessage (tool_status 等)
+      if (typeof message === 'string') {
+        if (queueDelayedReply(conversationId, message)) return
+        await sendByConversationId(conversationId, message)
+      } else {
+        await sendByConversationId(conversationId, message)
+      }
     },
   )
 

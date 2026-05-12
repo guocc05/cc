@@ -11,6 +11,19 @@ import type { ToolDriver, ToolId, ToolCapabilities, CreateSessionOptions, Create
 import type { RecapTurn } from './recap.js'
 import { tmuxExactTarget } from './tmux-util.js'
 
+/**
+ * 细粒度 turn 事件：driver 把 stream-json 拆解后通知 daemon（@20260512-im-tool-call-progress）
+ * - text: 一段 AI 输出文本
+ * - tool_start: AI 开始调用一个工具
+ * - tool_end: 工具调用结束
+ * - turn_end: 整个 turn (一次 sendMessage) 结束
+ */
+export type TurnEvent =
+  | { kind: 'text'; text: string }
+  | { kind: 'tool_start'; toolUseId: string; name: string }
+  | { kind: 'tool_end'; toolUseId: string; success: boolean }
+  | { kind: 'turn_end' }
+
 /** runTool 的选项 */
 export interface RunToolOptions {
   message: string
@@ -20,12 +33,19 @@ export interface RunToolOptions {
   env?: NodeJS.ProcessEnv
   onSpawn?: (child: ChildProcess) => void
   outputFile?: string
+  /** @deprecated 优先用 onTurnEvent;onTurnText 仅做向后兼容（Codex/Gemini driver 暂保留） */
   onTurnText?: (text: string) => void
+  /** 细粒度 turn 事件流（@20260512-im-tool-call-progress） */
+  onTurnEvent?: (event: TurnEvent) => void
   onEvent?: (event: Record<string, unknown>) => void
   /** 从 NDJSON 事件中提取 assistant 文本的函数 */
   extractText?: (event: Record<string, unknown>) => string
   /** 从 NDJSON 事件中提取 result 文本的函数 */
   extractResult?: (event: Record<string, unknown>) => string
+  /** 从 NDJSON 事件中提取 tool_use blocks 的函数（@20260512-im-tool-call-progress） */
+  extractToolStarts?: (event: Record<string, unknown>) => Array<{ toolUseId: string; name: string }>
+  /** 从 NDJSON 事件中提取 tool_result blocks 的函数（@20260512-im-tool-call-progress） */
+  extractToolEnds?: (event: Record<string, unknown>) => Array<{ toolUseId: string; success: boolean }>
 }
 
 interface ToolFailureInfo {
@@ -140,6 +160,8 @@ export abstract class BaseToolDriver implements ToolDriver {
       // 默认文本提取：尝试常见的 NDJSON 格式
       const extractText = opts.extractText ?? defaultExtractText
       const extractResult = opts.extractResult ?? defaultExtractResult
+      const extractToolStarts = opts.extractToolStarts ?? defaultExtractToolStarts
+      const extractToolEnds = opts.extractToolEnds ?? defaultExtractToolEnds
 
       function handleEvent(event: Record<string, unknown>): void {
         opts.onEvent?.(event)
@@ -154,6 +176,16 @@ export abstract class BaseToolDriver implements ToolDriver {
         if (text) {
           turnTexts.push(text)
           opts.onTurnText?.(text)
+          opts.onTurnEvent?.({ kind: 'text', text })
+        }
+        // tool_use 派生 tool_start 事件（仅在有 onTurnEvent 时触发）
+        if (opts.onTurnEvent) {
+          for (const t of extractToolStarts(event)) {
+            opts.onTurnEvent({ kind: 'tool_start', toolUseId: t.toolUseId, name: t.name })
+          }
+          for (const t of extractToolEnds(event)) {
+            opts.onTurnEvent({ kind: 'tool_end', toolUseId: t.toolUseId, success: t.success })
+          }
         }
         if (result) resultParts.push(result)
 
@@ -187,6 +219,9 @@ export abstract class BaseToolDriver implements ToolDriver {
             }
           }
         }
+
+        // 派 turn_end 事件（@20260512-im-tool-call-progress）
+        opts.onTurnEvent?.({ kind: 'turn_end' })
 
         const resultText = turnTexts.length > 0
           ? turnTexts.join('\n\n---\n\n')
@@ -244,6 +279,41 @@ function defaultExtractText(event: Record<string, unknown>): string {
 function defaultExtractResult(event: Record<string, unknown>): string {
   if (event.type === 'result' && typeof event.result === 'string') return event.result
   return ''
+}
+
+/**
+ * 默认 tool_use 提取：从 assistant event 的 content[type='tool_use'] block 派生 tool_start。
+ * （@20260512-im-tool-call-progress, 实证 Claude stream-json 行为）
+ */
+function defaultExtractToolStarts(event: Record<string, unknown>): Array<{ toolUseId: string; name: string }> {
+  if (event.type !== 'assistant') return []
+  const msg = event.message as Record<string, unknown> | undefined
+  if (!msg || !Array.isArray(msg.content)) return []
+  const out: Array<{ toolUseId: string; name: string }> = []
+  for (const block of msg.content as Array<Record<string, unknown>>) {
+    if (block.type === 'tool_use' && typeof block.id === 'string' && typeof block.name === 'string') {
+      out.push({ toolUseId: block.id, name: block.name })
+    }
+  }
+  return out
+}
+
+/**
+ * 默认 tool_result 提取：从 user event 的 content[type='tool_result'] block 派生 tool_end。
+ * （@20260512-im-tool-call-progress, 实证 Claude stream-json 行为）
+ */
+function defaultExtractToolEnds(event: Record<string, unknown>): Array<{ toolUseId: string; success: boolean }> {
+  if (event.type !== 'user') return []
+  const msg = event.message as Record<string, unknown> | undefined
+  if (!msg || !Array.isArray(msg.content)) return []
+  const out: Array<{ toolUseId: string; success: boolean }> = []
+  for (const block of msg.content as Array<Record<string, unknown>>) {
+    if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
+      const success = block.is_error !== true
+      out.push({ toolUseId: block.tool_use_id, success })
+    }
+  }
+  return out
 }
 
 function detectToolFailure(

@@ -38,7 +38,10 @@ export interface CreateSessionOptions {
 export interface SendMessageOptions {
   onSpawn?: (child: ChildProcess) => void
   outputFile?: string
+  /** @deprecated 优先用 onTurnEvent;onTurnText 保留向后兼容 */
   onTurnText?: (text: string) => void
+  /** 细粒度 turn 事件流（@20260512-im-tool-call-progress, 仅 Claude V1 支持） */
+  onTurnEvent?: (event: import('./base-driver.js').TurnEvent) => void
   /** 关联的 IM 会话 — 用于 Claude AskUserQuestion PreToolUse hook 把问题路由回正确的 IM 通道 */
   conversationId?: string
 }

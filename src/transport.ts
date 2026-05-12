@@ -62,7 +62,20 @@ export interface InteractiveCardMessage {
   degradedNote?: boolean
 }
 
-export type OutgoingMessage = TextMessage | PanelMessage | InteractiveCardMessage
+/**
+ * AI 工具调用进行中状态消息：daemon 主动 push 给 IM,告诉用户"AI 正在工作"。
+ * 引入: @20260512-im-tool-call-progress (ARCHITECTURE §4.9, DESIGN_SYSTEM §2.1 ⚙️)
+ *
+ * - 飞书 + 微信均渲染为 text msg_type（V1 跨 transport 文案一致）
+ * - 整 turn 内最多发 1 条;append-only 不撤销不编辑
+ */
+export interface ToolStatusMessage {
+  kind: 'tool_status'
+  toolNames: string[]   // 去重后的工具名列表（按 turn 内首次出现顺序）
+  toolCount: number     // turn 内 tool_start 总数（含同名重复）
+}
+
+export type OutgoingMessage = TextMessage | PanelMessage | InteractiveCardMessage | ToolStatusMessage
 
 /** Transport 适配器接口 */
 export interface TransportAdapter {

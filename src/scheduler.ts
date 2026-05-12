@@ -106,9 +106,16 @@ async function deliverMessage(
   if (targetBinding) {
     // 有活跃绑定：走 queue，输出回到当前绑定的 chat；
     // 反茄钟休息期：queueDelayedReply 会拦下输出延迟到工作期再送达，与人发的消息一视同仁
-    enqueue(targetBinding.conversationId, s.message, async (reply: string) => {
-      if (queueDelayedReply(targetBinding.conversationId, reply)) return
-      await safeSend(targetBinding.transport, targetBinding.conversationId, reply)
+    enqueue(targetBinding.conversationId, s.message, async (reply) => {
+      // OutgoingMessage (含 tool_status) 跳过反茄钟延迟队列,实时发送（@20260512-im-tool-call-progress）
+      if (typeof reply === 'string') {
+        if (queueDelayedReply(targetBinding.conversationId, reply)) return
+        await safeSend(targetBinding.transport, targetBinding.conversationId, reply)
+      } else {
+        // OutgoingMessage: 退化为纯文本走 safeSend (scheduler 路径不直连 transport.sendMessage)
+        const { renderOutgoingMessageAsText } = await import('./message-format.js')
+        await safeSend(targetBinding.transport, targetBinding.conversationId, renderOutgoingMessageAsText(reply))
+      }
     })
     const sameChat = targetBinding.conversationId === s.conversationId
     return sameChat ? '已投递到当前对话队列' : `已投递（结果回到当前接入端：${transportLabel(targetBinding.transport)}）`
