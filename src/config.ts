@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile、askUserTimeoutMinutes), ~/.im2cc/wechat-account.json
+ * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile、askUserTimeoutMinutes、modelCatalogs), ~/.im2cc/wechat-account.json
  * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), getAskUserSocketPath(), getAskUserTimeoutMinutes(), getSessionDir(), getSessionsRootDir(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -35,6 +35,22 @@ export interface Im2ccConfig {
   toolCallStatus?: {
     textDebounceMs?: number     // 默认 1500
     statusThresholdMs?: number  // 默认 5000
+  }
+  /**
+   * 可选：覆盖内置的 /model 候选模型清单（per-tool 完全替换）。
+   * 缺失或字段为非数组时 fallback 到内置默认（详见 src/model-catalog.ts）。
+   * 用户在 ~/.im2cc/config.json 这样写：
+   *   "modelCatalogs": {
+   *     "claude": [
+   *       { "shortName": "opus-5", "fullName": "claude-opus-5", "description": "Opus 5" }
+   *     ],
+   *     "codex": [...]
+   *   }
+   * 让用户不升级 im2cc 也能用新模型 / 自定义偏好子集。
+   */
+  modelCatalogs?: {
+    claude?: Array<{ shortName: string; fullName: string; description: string }>
+    codex?: Array<{ shortName: string; fullName: string; description: string }>
   }
 }
 

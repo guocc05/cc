@@ -102,10 +102,12 @@ export class ClaudeDriver extends BaseToolDriver {
       askUser?.env,
     )
 
+    const modelArgs = opts?.modelOverride ? ['--model', opts.modelOverride] : []
+
     return this.runTool({
       cmd: getClaudeLauncher(),
       message,
-      args: ['-p', message, ...sessionFlag, ...settingsArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
+      args: ['-p', message, ...sessionFlag, ...settingsArgs, ...modelArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
       cwd,
       env,
       onSpawn: opts?.onSpawn,

@@ -1,6 +1,6 @@
 /**
  * @input:    用户消息文本, Im2ccConfig, Binding
- * @output:   parseCommand(), handleCommand(), renderRegisteredSessionList(), renderLocalRegisteredSessionList() — 命令解析与执行、IM/本地列表渲染（含 /fc 双参数注册模式、/fqon /fqoff /fqs、/ls 工作区项目列表）
+ * @output:   parseCommand(), handleCommand(), renderRegisteredSessionList(), renderLocalRegisteredSessionList() — 命令解析与执行、IM/本地列表渲染（含 /fc 双参数注册模式、/fqon /fqoff /fqs、/ls 工作区项目列表、/clear /compact /model 会话控制 alias 层；状态查看统一用 /fs）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -17,7 +17,9 @@ import {
 } from './project-index.js'
 import { createBinding, getBinding, archiveBinding, archiveBindingsBySession, updateBinding, type Binding } from './session.js'
 import { getDriver, hasDriver, type ToolId } from './tool-driver.js'
-import { handleStop, getQueueStatus } from './queue.js'
+import { handleStop, getQueueStatus, listInflightTasksForSession } from './queue.js'
+import { getModelCatalog, resolveModelInput, findShortNameByFullName, type ModelOption } from './model-catalog.js'
+import { setPendingModelSelection, clearPendingModelSelection } from './model-pending.js'
 import { discoverSessions, findSession, syncDriftedSession } from './discover.js'
 import { register, registerWithMeta, lookup, lookupBySessionId, search, listRegistered, touch, remove, updateRegistry } from './registry.js'
 import { buildSessionStatus } from './status.js'
@@ -61,7 +63,7 @@ function validateSessionProjectPath(rawPath: string): { ok: true, resolvedPath: 
 }
 
 // 统一命令名：电脑端和飞书端尽量保持一致；/help 仅作兼容别名保留
-const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs', 'at', 'in', 'cron'])
+const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs', 'at', 'in', 'cron', 'clear', 'compact', 'model'])
 
 export function parseCommand(text: string): ParsedCommand | null {
   const trimmed = text.trim()
@@ -87,6 +89,9 @@ export async function handleCommand(
     case 'fd': return handleFd(conversationId)
     case 'mode': return handleMode(cmd.args, conversationId, config)
     case 'stop': return handleStop(conversationId)
+    case 'clear': return handleClear(conversationId, config)
+    case 'compact': return handleCompact(conversationId)
+    case 'model': return handleModel(cmd.args, conversationId)
     case 'fqon': return handleFqOn()
     case 'fqoff': return handleFqOff()
     case 'fqs': return handleFqStatus()
@@ -593,6 +598,204 @@ function handleMode(args: string, conversationId: string, config: Im2ccConfig): 
   return `模式已切换为 ${resolved}（${modeInfo?.label}）\n下一条消息生效`
 }
 
+/**
+ * /clear — 清空当前对话：调 driver 创建新 sessionId 替换 binding，重置 modelOverride。
+ * 对话名 / cwd / permissionMode 不变；旧 sessionId 自动孤立但磁盘文件不删（与现有"漂移孤儿"等同）。
+ */
+async function handleClear(conversationId: string, config: Im2ccConfig): Promise<string> {
+  const binding = getBinding(conversationId)
+  if (!binding) return '❌ 当前会话未连接对话，请先 /fc 或 /fn'
+
+  const { state, queueLength } = getQueueStatus(conversationId)
+  if (state !== 'idle' || queueLength > 0) {
+    return '❌ 当前对话有任务在执行中，请先 /stop'
+  }
+  if (listInflightTasksForSession(binding.sessionId, conversationId).length > 0) {
+    return '❌ 当前对话有任务在执行中，请先 /stop'
+  }
+
+  const tool = (binding.tool ?? 'claude') as ToolId
+  if (tool === 'gemini') return '❌ Gemini 暂不支持 /clear'
+
+  const reg = lookupBySessionId(binding.sessionId)
+  const sessionName = reg?.name
+  if (!sessionName) {
+    return '❌ 当前 session 未在 registry 注册，无法清空（请回电脑端处理）'
+  }
+
+  // Claude 渠道选择器场景：必须显式 claudeProfile（否则 launcher 会弹交互菜单，IM 端无 TTY）
+  let claudeProfile: string | undefined
+  if (tool === 'claude' && hasCustomClaudeLauncher(config)) {
+    claudeProfile = reg?.claudeProfile?.trim() || config.imDefaultClaudeProfile?.trim()
+    if (!claudeProfile) {
+      return [
+        '❌ 当前机器启用了本地 Claude 渠道选择器，IM 端无 TTY 无法弹菜单。',
+        '请在 ~/.im2cc/config.json 加 "imDefaultClaudeProfile": "<渠道名>"，或回电脑端处理。',
+      ].join('\n')
+    }
+  }
+
+  try {
+    const driver = getDriver(tool)
+    const { sessionId: newSessionId } = await driver.createSession(
+      binding.cwd,
+      binding.permissionMode,
+      sessionName,
+      { claudeProfile, conversationId },
+    )
+
+    // registry 同名替换 sessionId：register 会校验"同 sessionId 不能被多 name 持有"，
+    // 但同 name 替换 sessionId 是合法路径（旧 sessionId 自动孤立）
+    registerWithMeta(sessionName, newSessionId, binding.cwd, tool, {
+      permissionMode: binding.permissionMode,
+      claudeProfile,
+    })
+
+    updateBinding(conversationId, {
+      sessionId: newSessionId,
+      modelOverride: undefined,
+      turnCount: 0,
+    })
+
+    log(`[${conversationId}] /clear: ${binding.sessionId.slice(0, 8)} → ${newSessionId.slice(0, 8)} ("${sessionName}")`)
+    return `✅ 已清空对话 "${sessionName}"，开始新一轮`
+  } catch (err) {
+    return `❌ 清空失败: ${err instanceof Error ? err.message : String(err)}`
+  }
+}
+
+/**
+ * /compact — 压缩当前对话上下文（仅 Claude）。
+ * Spike 验证 `claude -p "/compact" --resume <id>` 真实执行压缩；Claude 返回空 result。
+ */
+async function handleCompact(conversationId: string): Promise<string> {
+  const binding = getBinding(conversationId)
+  if (!binding) return '❌ 当前会话未连接对话，请先 /fc 或 /fn'
+
+  const tool = (binding.tool ?? 'claude') as ToolId
+  if (tool !== 'claude') return `❌ /compact 仅 Claude 支持，当前工具: ${toolDisplayName(tool)}`
+
+  const { state, queueLength } = getQueueStatus(conversationId)
+  if (state !== 'idle' || queueLength > 0) {
+    return '❌ 当前对话有任务在执行中，请先 /stop'
+  }
+  if (listInflightTasksForSession(binding.sessionId, conversationId).length > 0) {
+    return '❌ 当前对话有任务在执行中，请先 /stop'
+  }
+
+  try {
+    const driver = getDriver(tool)
+    await driver.sendMessage(
+      binding.sessionId,
+      '/compact',
+      binding.cwd,
+      binding.permissionMode,
+      { conversationId },
+    )
+    log(`[${conversationId}] /compact 完成 (${binding.sessionId.slice(0, 8)})`)
+    return '✅ 已压缩对话上下文'
+  } catch (err) {
+    return `❌ 压缩失败: ${err instanceof Error ? err.message : String(err)}`
+  }
+}
+
+/**
+ * /model — 切换 binding 的 modelOverride；下条普通消息生效。
+ *
+ * 三种调用形式：
+ *  - 无参：展示候选模型短列表 + 当前选择 ★ 标记；同时设置 conversationId pending state（60s TTL）
+ *  - /model <编号>：等价从内置列表选第 N 项（无需 pending state 依赖）
+ *  - /model <短名 | 完整名 | 任意字符串>：直接切换；短名/完整名命中时回执用短名
+ *  - /model default：重置为工具默认
+ */
+function handleModel(args: string, conversationId: string): string {
+  const binding = getBinding(conversationId)
+  if (!binding) return '❌ 当前会话未连接对话，请先 /fc 或 /fn'
+
+  const tool = (binding.tool ?? 'claude') as ToolId
+  if (tool === 'gemini') return '❌ Gemini 暂不支持 /model'
+
+  const trimmed = args.trim()
+
+  // /model（无参）— 展示列表 + 设 pending
+  if (!trimmed) {
+    return renderModelList(conversationId, binding.modelOverride, tool)
+  }
+
+  // /model default — 重置为工具默认
+  if (trimmed === 'default') {
+    updateBinding(conversationId, { modelOverride: undefined })
+    clearPendingModelSelection(conversationId)
+    return '✅ 已重置为工具默认模型'
+  }
+
+  // /model <编号 1-N>（N = 工具内置清单长度）
+  if (/^[1-9]$/.test(trimmed)) {
+    const catalog = getModelCatalog(tool)
+    const idx = Number.parseInt(trimmed, 10) - 1
+    if (idx < catalog.length) {
+      return applyModelSelection(conversationId, catalog[idx])
+    }
+    // 编号超出清单 → 当任意字符串处理（写入 "2" 这种值给 CLI 会报错，但行为一致）
+  }
+
+  // /model <短名 | 完整名 | 任意字符串>
+  clearPendingModelSelection(conversationId)
+  const resolved = resolveModelInput(tool, trimmed)
+  updateBinding(conversationId, { modelOverride: resolved.fullName })
+  const displayName = resolved.shortName ?? resolved.fullName
+  return `✅ 已切换到模型 "${displayName}"，下条消息开始生效`
+}
+
+/**
+ * 渲染候选模型列表文本 + 注册 pending state（60s TTL）。
+ * 在 conversationId 上的下一条纯数字消息会被 model-pending 路由命中。
+ */
+function renderModelList(conversationId: string, currentModelOverride: string | undefined, tool: ToolId): string {
+  const catalog = getModelCatalog(tool)
+  if (catalog.length === 0) {
+    // 不应该走到这里（已在 handleModel 拦截 gemini），兜底
+    return '❌ 当前工具暂无可用模型清单'
+  }
+
+  setPendingModelSelection(conversationId, catalog)
+
+  // currentShort 可能是清单内的短名，也可能是用户自由输入的非清单值（原文回显）
+  const currentShort = findShortNameByFullName(tool, currentModelOverride)
+  const isInCatalog = !!currentShort && catalog.some(o => o.shortName === currentShort)
+  // ★ 仅在当前选择真的命中清单时才在 headline 显示，与列表行的 ★ 标记保持一致
+  const headline = `🤖 ${toolDisplayName(tool)} 可选模型（当前: ${currentShort ?? '使用工具默认'}${isInCatalog ? ' ★' : ''}）`
+
+  // 计算列宽，让短名右侧描述对齐
+  const maxNameWidth = Math.max(...catalog.map(o => o.shortName.length))
+  const optionLines = catalog.map((opt, i) => {
+    const num = i + 1
+    const namePad = opt.shortName.padEnd(maxNameWidth)
+    const star = currentShort === opt.shortName ? ' ★ 当前' : ''
+    return `  ${num}) ${namePad}  — ${opt.description}${star}`
+  })
+
+  return [
+    headline,
+    '',
+    ...optionLines,
+    '',
+    `回复编号切换 (60s 内有效)，或 /model <名称>`,
+    `/model default 重置为工具默认`,
+  ].join('\n')
+}
+
+/**
+ * 应用一次模型选择（命中清单或 pending 命中）。
+ * 复用：handleModel 编号路径 + index.ts pending 路由命中。
+ */
+export function applyModelSelection(conversationId: string, option: ModelOption): string {
+  updateBinding(conversationId, { modelOverride: option.fullName })
+  clearPendingModelSelection(conversationId)
+  return `✅ 已切换到模型 "${option.shortName}"，下条消息开始生效`
+}
+
+
 function toolDisplayName(tool: string): string {
   switch (tool) {
     case 'claude': return 'Claude'
@@ -971,6 +1174,11 @@ export function renderUnifiedHelp(): string {
     '/mode                    — 查看可用模式',
     '/mode <模式别名>         — 切换模式（例如 /mode au）',
     '/stop                    — 中断当前执行',
+    '/clear                   — 清空当前对话（保留对话名，开新一轮）',
+    '/compact                 — 压缩当前对话上下文（仅 Claude）',
+    '/model                   — 查看当前模型覆盖',
+    '/model <名称>            — 切换模型，下条消息生效（例如 /model claude-opus-4-7）',
+    '/model default           — 重置为工具默认模型',
     '/at HH:MM <消息>          — 在指定时刻自动发该消息到当前对话',
     '/in <时长> <消息>          — 间隔后自动发（如 /in 2h 继续）',
     '/cron <5 段表达式> <消息>  — 周期触发（如 /cron 0 9 * * * 早晨开工）',

@@ -46,8 +46,10 @@ export class CodexDriver extends BaseToolDriver {
   }
 
   sendMessage(sessionId: string, message: string, cwd: string, permissionMode: string, opts?: SendMessageOptions): Promise<string> {
-    // Codex resume: codex exec resume <ID> "msg"
-    const args = ['exec', 'resume', sessionId, '--json', '--skip-git-repo-check', ...codexPermArgs(permissionMode), message]
+    // Codex resume: codex exec resume <ID> [-m model] "msg"
+    // -m/--model 是 `codex exec resume` 子命令自带 flag
+    const modelArgs = opts?.modelOverride ? ['-m', opts.modelOverride] : []
+    const args = ['exec', 'resume', sessionId, '--json', '--skip-git-repo-check', ...modelArgs, ...codexPermArgs(permissionMode), message]
 
     return this.runTool({
       cmd: 'codex',

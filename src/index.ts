@@ -10,7 +10,8 @@ import { execFileSync } from 'node:child_process'
 import { loadConfig, getPidFile, getDaemonLockDir, loadWeChatAccount } from './config.js'
 import { isUserAllowed } from './security.js'
 import { isDuplicate, listActiveBindings, getBinding, archiveBinding } from './session.js'
-import { parseCommand, handleCommand, type ParsedCommand } from './commands.js'
+import { parseCommand, handleCommand, applyModelSelection, type ParsedCommand } from './commands.js'
+import { consumePendingModelSelection } from './model-pending.js'
 import { enqueue, recoverOnStartup } from './queue.js'
 import { FeishuAdapter } from './feishu.js'
 // 导入所有 tool driver（每个文件末尾自动注册到全局 driver 注册表）
@@ -488,6 +489,16 @@ export async function startDaemon(): Promise<void> {
         await sendSystem(`命令执行失败: ${err instanceof Error ? err.message : String(err)}`)
       }
     } else {
+      // 优先级 0: 如果当前 conversationId 有挂起的 /model 列表选择，纯数字 1-N 命中 = 切换模型
+      // 任何其他消息（非命中数字）会自动清除 pending，走后续路径
+      const modelPick = consumePendingModelSelection(conversationId, text ?? '')
+      if (modelPick) {
+        const reply = applyModelSelection(conversationId, modelPick)
+        await sendSystem(reply)
+        react('DONE')
+        return
+      }
+
       // 优先级 1: 如果当前 binding session 有挂起的 AskUserQuestion，把这条文本视为答案
       // 编号纯数字 → 对应选项 label；否则 → freeText 原文（含语义不明也按原文给 AI）
       const bindingForAsk = getBinding(conversationId)

@@ -435,6 +435,7 @@ async function processNext(
       binding.permissionMode,
       {
         conversationId,
+        modelOverride: binding.modelOverride,
         onSpawn: (child) => {
           group.currentChild = child
           if (child.pid) updateInflightPid(inflight.id, child.pid)
