@@ -26,6 +26,7 @@ import { hasCustomClaudeLauncher, selectClaudeProfile } from '../src/claude-laun
 import { disableAntiPomodoro, enableAntiPomodoro, formatAntiPomodoroStatus, getAntiPomodoroSnapshot } from '../src/anti-pomodoro.js'
 import { interruptInflightTasksForSession, listCompletedInflightSnapshotsForSession, listInflightTasksForSession, type CompletedInflightSnapshot, type InflightTaskSnapshot } from '../src/queue.js'
 import readline from 'node:readline'
+import { tmuxExactTarget } from '../src/tmux-util.js'
 
 // 触发各 driver 自注册（模块级副作用）
 import '../src/claude-driver.js'
@@ -252,7 +253,7 @@ switch (command) {
 /** 检查 tmux session 是否存在 */
 function tmuxSessionExists(name: string): boolean {
   try {
-    execFileSync('tmux', ['has-session', '-t', name], { stdio: 'ignore' })
+    execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(name)], { stdio: 'ignore' })
     return true
   } catch { return false }
 }
@@ -260,7 +261,7 @@ function tmuxSessionExists(name: string): boolean {
 /** 检测 tmux session 中实际运行的工具（通过进程名匹配） */
 function tmuxPaneTool(tmuxSession: string): ToolId | null {
   try {
-    const pid = execFileSync('tmux', ['list-panes', '-t', tmuxSession, '-F', '#{pane_pid}'],
+    const pid = execFileSync('tmux', ['list-panes', '-t', tmuxExactTarget(tmuxSession), '-F', '#{pane_pid}'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim().split('\n')[0]
     if (!pid) return null
     const cmd = execFileSync('ps', ['-p', pid, '-o', 'command='],
@@ -276,12 +277,12 @@ function tmuxPaneTool(tmuxSession: string): ToolId | null {
 function tmuxConnect(tmuxSession: string): void {
   try {
     if (process.env.TMUX) {
-      execFileSync('tmux', ['switch-client', '-t', tmuxSession], { stdio: 'inherit' })
+      execFileSync('tmux', ['switch-client', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'inherit' })
     } else {
-      execFileSync('tmux', ['attach', '-dt', tmuxSession], { stdio: 'inherit' })
+      execFileSync('tmux', ['attach', '-d', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'inherit' })
     }
   } catch {
-    console.log(`tmux 操作失败。手动运行: tmux attach -t ${tmuxSession}`)
+    console.log(`tmux 操作失败。手动运行: tmux attach -t '=${tmuxSession}'`)
   }
 }
 
@@ -303,7 +304,7 @@ function findTmuxSession(name: string, tool: string = 'claude'): string | null {
   if (actualTool === tool) {
     // 工具匹配 → 升级命名，无损迁移
     try {
-      execFileSync('tmux', ['rename-session', '-t', oldName, newName], { stdio: 'ignore' })
+      execFileSync('tmux', ['rename-session', '-t', tmuxExactTarget(oldName), newName], { stdio: 'ignore' })
       return newName
     } catch {
       return oldName
@@ -822,11 +823,11 @@ async function cmdNew(): Promise<void> {
     const tmuxSession = `im2cc-${tool}-${name}`
     // 清理可能残留的同名 tmux session
     if (tmuxSessionExists(tmuxSession)) {
-      execFileSync('tmux', ['kill-session', '-t', tmuxSession], { stdio: 'ignore' })
+      execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
     }
     const oldTmux = `im2cc-${name}`
     if (tmuxSessionExists(oldTmux)) {
-      execFileSync('tmux', ['kill-session', '-t', oldTmux], { stdio: 'ignore' })
+      execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(oldTmux)], { stdio: 'ignore' })
     }
 
     try {
@@ -1127,8 +1128,8 @@ function cmdDelete(): void {
   // Kill tmux — 显式删除时清理所有格式的 tmux session，不依赖工具验证
   for (const tmuxName of [`im2cc-${session.tool ?? 'claude'}-${session.name}`, `im2cc-${session.name}`]) {
     try {
-      execFileSync('tmux', ['has-session', '-t', tmuxName], { stdio: 'ignore' })
-      execFileSync('tmux', ['kill-session', '-t', tmuxName], { stdio: 'ignore' })
+      execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxName)], { stdio: 'ignore' })
+      execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxName)], { stdio: 'ignore' })
       console.log('✅ 已终止 tmux 会话')
     } catch { /* 不存在 */ }
   }

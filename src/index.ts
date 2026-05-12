@@ -24,6 +24,7 @@ import { upgradeOfficeLegacy } from './office-upgrader.js'
 import { buildAttachmentPrompt } from './attachment-prompt.js'
 import { buildRecapMessages } from './recap.js'
 import { log, error } from './logger.js'
+import { tmuxExactTarget } from './tmux-util.js'
 import type { TransportAdapter, IncomingMessage, OutgoingMessage, TransportType } from './transport.js'
 import {
   ANTI_POMODORO_IM_COMMANDS,
@@ -83,21 +84,21 @@ function isSessionLocallyActive(sessionName: string, tool: string = 'claude'): b
   // 新格式：名称已编码工具身份，直接判断
   const newName = `im2cc-${tool}-${sessionName}`
   try {
-    execFileSync('tmux', ['has-session', '-t', newName], { stdio: 'ignore' })
+    execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(newName)], { stdio: 'ignore' })
     return true
   } catch {}
 
   // 旧格式：存在时需验证进程是否匹配预期工具
   const oldName = `im2cc-${sessionName}`
   try {
-    execFileSync('tmux', ['has-session', '-t', oldName], { stdio: 'ignore' })
+    execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(oldName)], { stdio: 'ignore' })
   } catch {
     return false
   }
 
   // 旧格式存在 → 检测实际运行的工具
   try {
-    const pid = execFileSync('tmux', ['list-panes', '-t', oldName, '-F', '#{pane_pid}'],
+    const pid = execFileSync('tmux', ['list-panes', '-t', tmuxExactTarget(oldName), '-F', '#{pane_pid}'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim().split('\n')[0]
     if (!pid) return false
     const cmd = execFileSync('ps', ['-p', pid, '-o', 'command='],

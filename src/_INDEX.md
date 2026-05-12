@@ -15,6 +15,7 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - claude-launcher.ts：Claude 本地启动器覆盖（可选 launcher 解析、profile 选择、环境变量透传），并提供 injectAskUserHookSettings — 给当前 session 写入 PreToolUse AskUserQuestion hook 配置 + IM2CC_* 环境变量
 - askuser-bridge.ts：Claude AskUserQuestion 反向提问桥接 — daemon 侧 unix socket IPC server（~/.im2cc/sockets/askuser.sock），与 hooks/askuser-hook.mjs 用 NDJSON 通信；维护 pending Q&A map、超时计时、cancel 传播；通过 EventEmitter 把 ask / answered / timeout / cancelled 事件透出给 daemon 主流程
 - tool-cli-args.ts：各工具交互式 CLI 参数映射（tmux create/resume + resume hint）
+- tmux-util.ts：tmuxExactTarget(name) — 把 -t 包成 `=<name>` 强制精确匹配，避免 tmux 默认 prefix match 让前缀重合的 session 名互相干扰（ARCHITECTURE.md §4.2 红线，引入：@20260512-fc-tmux-client-preempt）
 - tool-compat.ts：工具 CLI 可选能力探测（例如 Claude 是否支持 `--name`）
 - upgrade.ts：安装模式识别（detectInstallRoot + InstallMode: npm-global / git-checkout / tarball / unknown），供 `im2cc update` 路由
 - shell-install.ts：shell rc 文件（.zshrc/.bashrc）的 im2cc 薄包装函数注入逻辑：marker 对、清理历史行、幂等替换；核心计算是纯函数，便于测试

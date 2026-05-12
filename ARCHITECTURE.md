@@ -90,6 +90,7 @@
 - tmux session 命名只是进程管理标签，**不是身份**
 - 所有 session lookup / 路由 / 绑定切换都必须通过 `registry.ts`
 - /fc /fn /fk 等命令都依赖 registry 派生
+- **tmux session 引用必须精确匹配**：所有 `tmux ... -t <name>` 调用必须用 `-t =<name>` 语法强制禁用 prefix match。否则当 session 名互为前缀时（如 `im2cc` / `im2cc01`），prefix match 会让前者命中后者，造成 has-session 误判、kill-session 误杀、attach 切到错的 session 等连锁问题。引入：`@20260512-fc-tmux-client-preempt` (2026-05-12)
 
 ### 4.3 独占访问
 同一 session 同一时刻只能在一个端使用（电脑 tmux / 飞书 / 微信三端互斥），由 binding 机制保证。
@@ -244,3 +245,4 @@ bash scripts/smoke.sh                              # 端到端冒烟（需活跃
 |---|---|---|
 | 2026-05-10 | @20260510-office-doc-relay | bootstrap ARCHITECTURE.md；引入 §5.1 ToolCapabilities-driven 文件处理策略；追溯文档化 §5.2 IM 文件暂存机制 |
 | 2026-05-10 | @20260510-im-askuserquestion-bridge | 引入 §4.7（远程交互反向桥接强制，与 §4.5 互补）；§4.8（Gemini 维护模式，项目级决策）；§5.3（IM 反向交互桥接架构：PreToolUse hook + IPC + transport 卡片） |
+| 2026-05-11 | @20260510-im-slash-passthrough | 无新红线 / 跨 feature 模式；spike 实证 `-p` / `exec` 非交互模式下纯"工具内置斜杠命令透传"不可行（仅 Claude /compact 例外）；feature 在 commands.ts 实现"会话控制 alias 层"——/clear /compact /model /status 注册为 im2cc 命令；详见 docs/features/20260510-im-slash-passthrough.md §Plan |

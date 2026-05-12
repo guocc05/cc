@@ -13,6 +13,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import readline from 'node:readline'
+import { tmuxExactTarget } from './tmux-util.js'
 import { execFileSync } from 'node:child_process'
 import { log } from './logger.js'
 import type { ToolId } from './tool-driver.js'
@@ -342,7 +343,7 @@ function syncDriftedCodexSession(
 function detectCodexThreadFromTmuxPane(name: string, cwd: string): string | null {
   const tmuxSession = `im2cc-codex-${name}`
   try {
-    execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore' })
+    execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
   } catch {
     return null
   }
@@ -351,7 +352,7 @@ function detectCodexThreadFromTmuxPane(name: string, cwd: string): string | null
   try {
     paneText = execFileSync(
       'tmux',
-      ['capture-pane', '-p', '-t', tmuxSession, '-S', '-200'],
+      ['capture-pane', '-p', '-t', tmuxExactTarget(tmuxSession), '-S', '-200'],
       { encoding: 'utf-8', stdio: ['ignore', 'pipe', 'ignore'] },
     ).trim()
   } catch {

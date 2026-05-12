@@ -9,6 +9,7 @@ import { spawn, execFileSync, type ChildProcess } from 'node:child_process'
 import crypto from 'node:crypto'
 import type { ToolDriver, ToolId, ToolCapabilities, CreateSessionOptions, CreateSessionResult, SendMessageOptions, SessionFileStatus } from './tool-driver.js'
 import type { RecapTurn } from './recap.js'
+import { tmuxExactTarget } from './tmux-util.js'
 
 /** runTool 的选项 */
 export interface RunToolOptions {
@@ -61,8 +62,8 @@ export abstract class BaseToolDriver implements ToolDriver {
     const tmuxNames = [`im2cc-${t}-${sessionName}`, `im2cc-${sessionName}`]
     for (const tmuxSession of tmuxNames) {
       try {
-        execFileSync('tmux', ['has-session', '-t', tmuxSession], { stdio: 'ignore' })
-        execFileSync('tmux', ['kill-session', '-t', tmuxSession], { stdio: 'ignore' })
+        execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
+        execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
         return true
       } catch { /* 不存在 */ }
     }
