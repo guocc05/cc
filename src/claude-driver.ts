@@ -105,11 +105,15 @@ export class ClaudeDriver extends BaseToolDriver {
     )
 
     const modelArgs = opts?.modelOverride ? ['--model', opts.modelOverride] : []
+    // @20260513-im-btw-side-fork REVISION: /btw fork turn 注入工具黑名单
+    const disallowedArgs = opts?.disallowedTools && opts.disallowedTools.length > 0
+      ? ['--disallowed-tools', opts.disallowedTools.join(' ')]
+      : []
 
     return this.runTool({
       cmd: getClaudeLauncher(),
       message,
-      args: ['-p', message, ...sessionFlag, ...settingsArgs, ...modelArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
+      args: ['-p', message, ...sessionFlag, ...settingsArgs, ...modelArgs, ...disallowedArgs, '--output-format', 'stream-json', '--verbose', ...permissionArgs(permissionMode)],
       cwd,
       env,
       onSpawn: opts?.onSpawn,

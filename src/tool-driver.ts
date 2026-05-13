@@ -47,6 +47,12 @@ export interface SendMessageOptions {
   conversationId?: string
   /** 本次调用的模型覆盖（由 /model 命令写入 binding，queue 透传给 driver）；undefined = 用工具默认 */
   modelOverride?: string
+  /**
+   * 本次调用的工具黑名单（@20260513-im-btw-side-fork REVISION）。
+   * 透传到 driver CLI 的 `--disallowed-tools` 参数；undefined / 空数组 = 不加该参数。
+   * /btw fork turn 用此约束 AI 不能修改文件系统 / 跑 shell / 派 sub-agent / 反向提问。
+   */
+  disallowedTools?: string[]
 }
 
 /** session 文件位置状态 */

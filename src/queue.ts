@@ -18,6 +18,20 @@ import { createTurnAggregator, type AggregatorAction } from './turn-aggregator.j
 import { loadConfig } from './config.js'
 import type { OutgoingMessage } from './transport.js'
 
+/**
+ * /btw fork turn 强制禁用的工具列表（@20260513-im-btw-side-fork REVISION 2026-05-13）。
+ * 通过 driver `--disallowed-tools` 参数硬约束，保证 fork turn 不污染工作目录文件系统。
+ * 保留可用 = Read / Grep / Glob / WebFetch / WebSearch / NotebookRead / TodoRead（只读类）。
+ */
+export const BTW_DISALLOWED_TOOLS = Object.freeze([
+  'Edit', 'Write', 'NotebookEdit',  // 文件写
+  'Bash',                            // shell (V1 粗粒度禁；V1.x 视反馈加只读子集白名单)
+  'Task',                            // sub-agent 展开后副作用难控
+  'TodoWrite',                       // 改 ~/.claude/todos
+  'AskUserQuestion',                 // /btw 是一次性，不该再反问
+  'SlashCommand',                    // 命令展开
+] as const)
+
 type JobState = 'idle' | 'busy' | 'cancelling'
 
 interface QueuedMessage {
@@ -446,6 +460,8 @@ async function processNext(
       {
         conversationId,
         modelOverride: binding.modelOverride,
+        // @20260513-im-btw-side-fork REVISION: fork turn 强制注入工具黑名单
+        disallowedTools: msg.forkSessionId ? [...BTW_DISALLOWED_TOOLS] : undefined,
         onSpawn: (child) => {
           group.currentChild = child
           if (child.pid) updateInflightPid(inflight.id, child.pid)

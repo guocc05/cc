@@ -145,6 +145,12 @@ AI 工具在远程执行（IM 端经 daemon 调用）时若调用反向交互工
 - **驱动统一**: fork turn 必须走 `driver.sendMessage` 标准接口,不绕过 base-driver / queue / aggregator / askuser-bridge
 - **不进 registry**: fork sessionId 不注册到 registry,不写入 binding,daemon 重启不恢复
 - **V1 仅 Claude**: Codex thread 模型与 JSONL 文件 fork 不同构,V1.x+ 调研
+- **工具限制硬约束** (2026-05-13 REVISION): fork turn driver 调用必须含 `--disallowed-tools` 参数,
+  禁用 `Edit / Write / NotebookEdit / Bash / Task / TodoWrite / AskUserQuestion / SlashCommand`。
+  保证 fork turn **不仅对话历史隔离,工作目录文件系统也无任何副作用**。具体列表定义在
+  `src/queue.ts BTW_DISALLOWED_TOOLS` 常量。
+  对齐 Claude REPL `/btw` 的"无损"承诺,但保留只读工具 (Read/Grep/Glob/WebFetch/WebSearch)
+  以满足 IM 端"现场翻代码"的实用诉求 (Claude REPL 原生 /btw 完全无工具,我们略宽松)
 
 具体落实在 `src/claude-driver.ts` 的 `forkSession()` + `deleteForkSession()` + `src/commands.ts handleBtw()`。
 
@@ -283,3 +289,4 @@ bash scripts/smoke.sh                              # 端到端冒烟（需活跃
 | 2026-05-10 | @20260510-im-askuserquestion-bridge | 引入 §4.7（远程交互反向桥接强制，与 §4.5 互补）；§4.8（Gemini 维护模式，项目级决策）；§5.3（IM 反向交互桥接架构：PreToolUse hook + IPC + transport 卡片） |
 | 2026-05-11 | @20260510-im-slash-passthrough | 无新红线 / 跨 feature 模式；spike 实证 `-p` / `exec` 非交互模式下纯"工具内置斜杠命令透传"不可行（仅 Claude /compact 例外）；feature 在 commands.ts 实现"会话控制 alias 层"——/clear /compact /model /status 注册为 im2cc 命令；详见 docs/features/20260510-im-slash-passthrough.md §Plan |
 | 2026-05-13 | @20260513-im-btw-side-fork | 引入 §4.10（远程执行 side fork 旁路讨论生命周期红线，与 §4.2 / §4.7 / §4.9 兼容）；spike 端到端实证：`claude -p --resume <fork_id>` 接受 cp 出的 fork session 文件 + 完整继承主对话上下文 + 只写 fork 文件不污染 baseline + 文件名/内部 sessionId 字段不一致仍 work；范式为"OS 层 cp + driver 标准调用 + finally 清理"；详见 docs/features/20260513-im-btw-side-fork.md §Plan |
+| 2026-05-13 | @20260513-im-btw-side-fork REVISION | §4.10 加"工具限制硬约束"——fork turn 必须经 driver `--disallowed-tools` 禁用 Edit/Write/NotebookEdit/Bash/Task/TodoWrite/AskUserQuestion/SlashCommand，保证不污染工作目录文件系统；对齐 Claude REPL /btw 无损承诺，保留只读类工具以满足 IM 端实用诉求 |
