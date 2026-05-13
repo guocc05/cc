@@ -242,6 +242,28 @@ im2cc doctor
 - 标准写法仍然是 `fn --tool codex|gemini <名称> [路径]`；在 IM 中请继续使用 `/fn ... --tool codex|gemini`，不要写 `/fn-codex`。
 - 查看帮助时，电脑终端优先用 `im2cc help`；`fhelp` 只是快捷命令。飞书/微信里用 `/fhelp`。旧的 `/help` 仍兼容，但不再作为主要入口。
 
+## 旁路讨论（/btw）
+
+`/btw <问题>` 让你在不打扰主对话的前提下基于当前对话上下文问 AI 一个 side question——答完就忘，不进主对话历史，也不会让 AI 改你的文件。
+
+主要场景：
+
+```
+/btw 刚提到的那个库还有别的可选项吗?
+/btw 检查下 src/index.ts 第 100 行用的是哪个 API
+/btw 我们刚才用的 useEffect 在 React 19 有变化吗?
+```
+
+适合"问完即扔"的 follow-up、临时探索、查文档/规范——不希望这些占主对话的 token 预算和上下文。
+
+**关键约束与行为**：
+
+- **不污染主对话**：fork 一份 session 文件跑一次,跑完即删；主对话历史 / turn 数完全不变
+- **只读不写**：AI 在 /btw 内只能用读类工具（Read / Grep / Glob / WebFetch / WebSearch）；试图调 Edit / Write / Bash 会被硬拒绝 → 想改文件请走主对话普通消息
+- **不并发**：跟主对话和其他 /btw 顺序排队（daemon 同对话单线程）；急可以先 `/stop`
+- **仅 Claude**：Codex / Gemini 暂不支持
+- **daemon 重启会丢**：进行中的 /btw 会丢失（fork 文件留磁盘但不会自动恢复；文件 KB 级无害）
+
 ## 定时消息（/at /in /cron）
 
 主要场景：Claude Code 的 5 小时配额窗口耗尽后，你想在窗口重置的瞬间自动开工，而不是设闹钟手动盯着。
