@@ -23,11 +23,11 @@ im2cc 核心业务逻辑：IM 消息接收 → 命令路由 → 本地 AI coding
 - session.ts：Session 绑定 CRUD、原子写、消息去重
 - anti-pomodoro.ts：反茄钟状态机（waiting/work/rest 三态、休息期单次后台指令额度、延迟结果队列、daemon 同步与失败重试）
 - message-format.ts：统一结构化出站消息抽象（系统回复识别、飞书 post 渲染、微信纯文本降级）
-- claude-driver.ts：Claude Code CLI 驱动（spawn、stream-json 解析、中断）
+- claude-driver.ts：Claude Code CLI 驱动（spawn、stream-json 解析、中断、forkSession/deleteForkSession 用于 /btw 旁路 fork @20260513-im-btw-side-fork）
 - codex-driver.ts：Codex CLI 驱动（thread_id 创建、resume、输出解析）
 - gemini-driver.ts：Gemini CLI 驱动（best-effort，session_id 创建、resume、输出解析）
 - queue.ts：消息队列（per-group FIFO）、Job 三态管理、控制面分离（/stop 手动中断）；绑定切换后的旧结果丢弃、startup recovery 送达校验、本地接回电脑时的 inflight 中断，以及 handoff 保护态所需的 inflight / completed snapshot 查询
-- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径存在性复检、/fn 教学卡片、/ls 展示 registry 派生的已用项目、/fn 项目短名解析 + 模糊匹配建议 + 全新路径兜底；配 claudeLauncher 时 /fn 用 imDefaultClaudeProfile 非交互启动；/at /in /cron 设置每 session 一条定时消息）
+- commands.ts：命令解析与各命令处理函数（含 /fc 双参数注册模式、共享对话列表渲染、接入前路径存在性复检、/fn 教学卡片、/ls 展示 registry 派生的已用项目、/fn 项目短名解析 + 模糊匹配建议 + 全新路径兜底；配 claudeLauncher 时 /fn 用 imDefaultClaudeProfile 非交互启动；/at /in /cron 设置每 session 一条定时消息；/clear /compact /model /btw 会话控制层 @20260510-im-slash-passthrough / @20260513-im-btw-side-fork）
 - schedule-parser.ts：/at /in /cron 表达式解析（自实现 5 段 cron，无外部依赖）；返回绝对时间戳 nextFireAt 与剩余消息体
 - schedule-store.ts：~/.im2cc/data/schedules.json 原子读写；name 主键 upsert 唯一约束
 - scheduler.ts：定时消息调度核心 — 内存 timer + 持久化、daemon 重启零漂移、错过窗口处理（at/in 立即触发，cron 跳过本次重算下次）；触发时发回执到原 chat、消息走 queue 投递到当前活跃绑定（无绑定则 driver 直调，输出落日志）

@@ -4,6 +4,7 @@
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
+import crypto from 'node:crypto'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -23,6 +24,7 @@ export class ClaudeDriver extends BaseToolDriver {
     supportsResume: true,
     supportsDiscovery: true,
     supportsInterrupt: true,
+    supportsBtw: true,
     officeDocStrategy: 'native',
   }
 
@@ -115,6 +117,36 @@ export class ClaudeDriver extends BaseToolDriver {
       onTurnText: opts?.onTurnText,
       onTurnEvent: opts?.onTurnEvent,
     })
+  }
+
+  /**
+   * Claude 专有：fork 当前 session 为一个临时 session（@20260513-im-btw-side-fork）。
+   * 纯 OS 层 cp，无需修改文件内 sessionId 字段（spike 实证 Claude --resume 接受文件名/字段不一致）。
+   * 返回新生成的 fork sessionId（UUID v4）。
+   */
+  forkSession(sessionId: string, cwd: string): string {
+    const projectsDir = path.join(os.homedir(), '.claude', 'projects')
+    const slug = pathToSlug(cwd)
+    const baseline = path.join(projectsDir, slug, `${sessionId}.jsonl`)
+    if (!fs.existsSync(baseline)) {
+      throw new Error(`Claude session 文件不存在: ${baseline}`)
+    }
+    const forkId = crypto.randomUUID()
+    const forkPath = path.join(projectsDir, slug, `${forkId}.jsonl`)
+    fs.copyFileSync(baseline, forkPath)
+    return forkId
+  }
+
+  /**
+   * 清理 fork session 文件。turn finally 路径调用，幂等：文件不存在视为已清理。
+   */
+  deleteForkSession(forkId: string, cwd: string): void {
+    const forkPath = path.join(os.homedir(), '.claude', 'projects', pathToSlug(cwd), `${forkId}.jsonl`)
+    try {
+      fs.unlinkSync(forkPath)
+    } catch {
+      // 文件已不存在或权限问题：忽略（fork 文件极小，孤儿不致命）
+    }
   }
 
   /** Claude 专有：session 文件三态检查 */

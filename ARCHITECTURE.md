@@ -134,6 +134,25 @@ AI 工具在远程执行（IM 端经 daemon 调用）时若调用反向交互工
 - AskUserQuestion 走 PreToolUse hook 绕过 base-driver,aggregator 显式跳过 name='AskUserQuestion' 的 tool_use,与 §4.7 互不冲突
 - 任何新增 AI 工具 driver 必须接入 onTurnEvent 事件流,不能只发 raw text
 
+### 4.10 远程执行的 side fork 旁路讨论
+**引入**: `@20260513-im-btw-side-fork` (2026-05-13)
+
+远程执行的 `/btw` 类 side fork 命令——基于主对话上下文做一次独立讨论但不污染主 session——必须遵守如下生命周期红线:
+
+- **隔离**: fork session 文件用独立 UUID,与主 `binding.sessionId` **完全分离**（同 cwd 的 `~/.claude/projects/<slug>/` 目录,但文件名 UUID 不同）
+- **只读主**: 主 `binding.sessionId.jsonl` 在整个 fork 过程中**只被 OS 层 cp 读取,任何 driver 不写入**
+- **生命周期 = turn**: fork 文件创建于 `handleBtw` 入口,清理于 turn finally 路径（成功 / 失败 / cancel 都清）
+- **驱动统一**: fork turn 必须走 `driver.sendMessage` 标准接口,不绕过 base-driver / queue / aggregator / askuser-bridge
+- **不进 registry**: fork sessionId 不注册到 registry,不写入 binding,daemon 重启不恢复
+- **V1 仅 Claude**: Codex thread 模型与 JSONL 文件 fork 不同构,V1.x+ 调研
+
+具体落实在 `src/claude-driver.ts` 的 `forkSession()` + `deleteForkSession()` + `src/commands.ts handleBtw()`。
+
+**约束**:
+- 与 §4.2 "registry 是 session 身份唯一权威" 不冲突: fork session 不进 registry
+- 与 §4.7 / §4.9 兼容: AskUserQuestion / tool 进度都按标准走 driver 流程,fork turn 自然继承
+- daemon queue 同 conversation 仍单线程: /btw 与主对话 turn 排队执行,不引入真并发（与 Claude REPL 原生 /btw 的并发语义有差距,接受）
+
 ### 4.8 Gemini 进入维护模式
 **引入**：2026-05-10（项目级决策，非单 feature）
 
@@ -263,3 +282,4 @@ bash scripts/smoke.sh                              # 端到端冒烟（需活跃
 | 2026-05-10 | @20260510-office-doc-relay | bootstrap ARCHITECTURE.md；引入 §5.1 ToolCapabilities-driven 文件处理策略；追溯文档化 §5.2 IM 文件暂存机制 |
 | 2026-05-10 | @20260510-im-askuserquestion-bridge | 引入 §4.7（远程交互反向桥接强制，与 §4.5 互补）；§4.8（Gemini 维护模式，项目级决策）；§5.3（IM 反向交互桥接架构：PreToolUse hook + IPC + transport 卡片） |
 | 2026-05-11 | @20260510-im-slash-passthrough | 无新红线 / 跨 feature 模式；spike 实证 `-p` / `exec` 非交互模式下纯"工具内置斜杠命令透传"不可行（仅 Claude /compact 例外）；feature 在 commands.ts 实现"会话控制 alias 层"——/clear /compact /model /status 注册为 im2cc 命令；详见 docs/features/20260510-im-slash-passthrough.md §Plan |
+| 2026-05-13 | @20260513-im-btw-side-fork | 引入 §4.10（远程执行 side fork 旁路讨论生命周期红线，与 §4.2 / §4.7 / §4.9 兼容）；spike 端到端实证：`claude -p --resume <fork_id>` 接受 cp 出的 fork session 文件 + 完整继承主对话上下文 + 只写 fork 文件不污染 baseline + 文件名/内部 sessionId 字段不一致仍 work；范式为"OS 层 cp + driver 标准调用 + finally 清理"；详见 docs/features/20260513-im-btw-side-fork.md §Plan |

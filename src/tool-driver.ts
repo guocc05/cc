@@ -15,6 +15,7 @@ export interface ToolCapabilities {
   supportsResume: boolean       // 是否支持恢复历史对话
   supportsDiscovery: boolean    // 是否支持发现未注册的本地对话
   supportsInterrupt: boolean    // 是否支持中断执行中的任务
+  supportsBtw?: boolean         // 是否支持 /btw side fork（@20260513-im-btw-side-fork）；缺省 = false
   /**
    * office 文档（pdf/docx/xlsx/pptx）处理策略：
    *  'native'           = 工具自带 skill/能力（Claude + Anthropic document-skills plugin）

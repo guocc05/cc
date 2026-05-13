@@ -1,6 +1,6 @@
 /**
  * @input:    用户消息文本, Im2ccConfig, Binding
- * @output:   parseCommand(), handleCommand(), renderRegisteredSessionList(), renderLocalRegisteredSessionList() — 命令解析与执行、IM/本地列表渲染（含 /fc 双参数注册模式、/fqon /fqoff /fqs、/ls 工作区项目列表、/clear /compact /model 会话控制 alias 层；状态查看统一用 /fs）
+ * @output:   parseCommand(), handleCommand(), renderRegisteredSessionList(), renderLocalRegisteredSessionList() — 命令解析与执行、IM/本地列表渲染（含 /fc 双参数注册模式、/fqon /fqoff /fqs、/ls 工作区项目列表、/clear /compact /model 会话控制 alias 层、/btw side fork 旁路讨论；状态查看统一用 /fs）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -17,7 +17,7 @@ import {
 } from './project-index.js'
 import { createBinding, getBinding, archiveBinding, archiveBindingsBySession, updateBinding, type Binding } from './session.js'
 import { getDriver, hasDriver, type ToolId } from './tool-driver.js'
-import { handleStop, getQueueStatus, listInflightTasksForSession } from './queue.js'
+import { handleStop, getQueueStatus, listInflightTasksForSession, enqueue } from './queue.js'
 import { getModelCatalog, resolveModelInput, findShortNameByFullName, type ModelOption } from './model-catalog.js'
 import { setPendingModelSelection, clearPendingModelSelection } from './model-pending.js'
 import { discoverSessions, findSession, syncDriftedSession } from './discover.js'
@@ -63,7 +63,7 @@ function validateSessionProjectPath(rawPath: string): { ok: true, resolvedPath: 
 }
 
 // 统一命令名：电脑端和飞书端尽量保持一致；/help 仅作兼容别名保留
-const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs', 'at', 'in', 'cron', 'clear', 'compact', 'model'])
+const COMMANDS = new Set(['fn', 'fc', 'fl', 'ls', 'fk', 'fs', 'fd', 'mode', 'stop', 'help', 'fhelp', 'fqon', 'fqoff', 'fqs', 'at', 'in', 'cron', 'clear', 'compact', 'model', 'btw'])
 
 export function parseCommand(text: string): ParsedCommand | null {
   const trimmed = text.trim()
@@ -78,6 +78,7 @@ export async function handleCommand(
   conversationId: string,
   config: Im2ccConfig,
   transport: TransportType = 'feishu',
+  sendReply?: (message: string | OutgoingMessage) => Promise<void>,
 ): Promise<string | OutgoingMessage> {
   switch (cmd.command) {
     case 'fn': return handleFn(cmd.args, conversationId, config, transport)
@@ -92,6 +93,7 @@ export async function handleCommand(
     case 'clear': return handleClear(conversationId, config)
     case 'compact': return handleCompact(conversationId)
     case 'model': return handleModel(cmd.args, conversationId)
+    case 'btw': return handleBtw(cmd.args, conversationId, sendReply)
     case 'fqon': return handleFqOn()
     case 'fqoff': return handleFqOff()
     case 'fqs': return handleFqStatus()
@@ -1127,6 +1129,53 @@ function renderScheduleStatus(name: string, kind: 'at' | 'in' | 'cron'): string 
   return lines.join('\n')
 }
 
+/**
+ * /btw — 旁路 side 讨论（@20260513-im-btw-side-fork）。
+ * 复用主对话上下文（fork session JSONL 文件），跑一次独立 turn，结果回 IM；主 session 不被污染。
+ */
+async function handleBtw(
+  args: string,
+  conversationId: string,
+  sendReply?: (message: string | OutgoingMessage) => Promise<void>,
+): Promise<string> {
+  const question = args.trim()
+  if (!question) return '❌ /btw 需要一个问题，用法：/btw <问题>'
+
+  const binding = getBinding(conversationId)
+  if (!binding) return '❌ 当前会话未连接对话，请先 /fc 或 /fn'
+
+  const tool = (binding.tool ?? 'claude') as ToolId
+  if (tool !== 'claude') {
+    return `❌ ${tool} 暂不支持 /btw（V1 仅 Claude）`
+  }
+
+  if (!sendReply) {
+    // 防御：index.ts 路径总是传 sendReply
+    return '❌ /btw 内部错误：sendReply 未配置'
+  }
+
+  // 调 forkSession（Claude 专有；driver cast 到含可选方法的形状）
+  let forkSessionId: string
+  try {
+    const driver = getDriver('claude') as unknown as {
+      forkSession?: (sessionId: string, cwd: string) => string
+    }
+    if (!driver.forkSession) {
+      return '❌ 当前 Claude driver 不支持 /btw'
+    }
+    forkSessionId = driver.forkSession(binding.sessionId, binding.cwd)
+  } catch (err) {
+    return `❌ /btw 失败：${err instanceof Error ? err.message : String(err)}`
+  }
+
+  // 走标准 enqueue 路径，用 fork sessionId 替代 binding.sessionId
+  // AI 答案后续从 stream 流回 IM（aggregator / sendQueuedReplyIfAttached），handleBtw 不立即回复
+  enqueue(conversationId, question, sendReply, { forkSessionId })
+
+  // 返回空字符串：让 index.ts 跳过 sendSystem（不发"立即回执"，等 AI 答案）
+  return ''
+}
+
 function handleFqOn(): string {
   return enableAntiPomodoro().message
 }
@@ -1176,6 +1225,7 @@ export function renderUnifiedHelp(): string {
     '/stop                    — 中断当前执行',
     '/clear                   — 清空当前对话（保留对话名，开新一轮）',
     '/compact                 — 压缩当前对话上下文（仅 Claude）',
+    '/btw <问题>              — 旁路 side 讨论：基于主对话上下文问答，不污染主 session（仅 Claude）',
     '/model                   — 查看当前模型覆盖',
     '/model <名称>            — 切换模型，下条消息生效（例如 /model claude-opus-4-7）',
     '/model default           — 重置为工具默认模型',

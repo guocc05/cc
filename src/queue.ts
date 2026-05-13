@@ -28,6 +28,12 @@ interface QueuedMessage {
   /** 接受纯文本或结构化消息（@20260512-im-tool-call-progress 引入 OutgoingMessage 支持以发 tool_status） */
   sendReply: (message: string | OutgoingMessage) => Promise<void>
   expectedSessionId: string | null
+  /**
+   * /btw fork turn 的临时 sessionId（@20260513-im-btw-side-fork）。
+   * 非空时：driver.sendMessage 用此 id 替代 binding.sessionId；finally 路径清理 fork JSONL 文件；
+   * binding.turnCount 不递增（fork turn 不计入主对话）。
+   */
+  forkSessionId?: string
 }
 
 interface GroupState {
@@ -320,6 +326,7 @@ export function enqueue(
   conversationId: string,
   text: string,
   sendReply: (message: string | OutgoingMessage) => Promise<void>,
+  opts?: { forkSessionId?: string },
 ): void {
   const group = getGroup(conversationId)
   const binding = getBinding(conversationId)
@@ -333,6 +340,7 @@ export function enqueue(
       reject,
       sendReply,
       expectedSessionId: binding?.sessionId ?? null,
+      forkSessionId: opts?.forkSessionId,
     }
     group.queue.push(entry)
     savePending()
@@ -383,13 +391,15 @@ async function processNext(
       .catch(catchProcessError(conversationId, 'processNext(no-binding)'))
     return
   }
-  msg.expectedSessionId = binding.sessionId
+  // @20260513-im-btw-side-fork: /btw fork turn 用临时 sessionId,主 binding.sessionId 不被读写到 driver
+  const effectiveSessionId = msg.forkSessionId ?? binding.sessionId
+  msg.expectedSessionId = effectiveSessionId
 
   group.state = 'busy'
-  log(`[${conversationId}] 开始执行: ${msg.text.slice(0, 30)}...`)
+  log(`[${conversationId}] 开始执行${msg.forkSessionId ? '（/btw fork）' : ''}: ${msg.text.slice(0, 30)}...`)
 
-  // 创建 inflight 记录
-  const inflight = createInflight(conversationId, binding.sessionId, msg.text)
+  // 创建 inflight 记录（fork turn 用 fork sessionId 隔离,主 session 的 inflight 列表不被污染）
+  const inflight = createInflight(conversationId, effectiveSessionId, msg.text)
   const outputFile = path.join(getInflightDir(), inflight.outputFile)
 
   let streamed = false
@@ -429,7 +439,7 @@ async function processNext(
   try {
     const driver = getDriver(binding.tool ?? 'claude')
     const output = await driver.sendMessage(
-      binding.sessionId,
+      effectiveSessionId,
       msg.text,
       binding.cwd,
       binding.permissionMode,
@@ -448,7 +458,7 @@ async function processNext(
         } : undefined,
         onTurnText: aggregator ? undefined : (text) => {
           streamed = true
-          sendQueuedReplyIfAttached(msg, formatOutput(text, binding.sessionId, binding.transport, binding.tool))
+          sendQueuedReplyIfAttached(msg, formatOutput(text, effectiveSessionId, binding.transport, binding.tool))
             .catch(err => error(`[queue] 流式回复发送失败 [${conversationId}]: ${err}`))
         },
       },
@@ -459,10 +469,13 @@ async function processNext(
       dispatchActions(aggregator.flush())
     }
 
-    updateBinding(conversationId, { turnCount: binding.turnCount + 1 })
+    // fork turn 不递增主 binding.turnCount（@20260513-im-btw-side-fork）
+    if (!msg.forkSessionId) {
+      updateBinding(conversationId, { turnCount: binding.turnCount + 1 })
+    }
     completionPreview = output
     // 如果已经流式发送过，不再重复发最终累积文本
-    msg.resolve(streamed ? '' : formatOutput(output, binding.sessionId, binding.transport, binding.tool))
+    msg.resolve(streamed ? '' : formatOutput(output, effectiveSessionId, binding.transport, binding.tool))
   } catch (err) {
     const queueState = group.state as JobState
     completionStatus = queueState === 'cancelling' ? 'interrupted' : 'failed'
@@ -472,6 +485,15 @@ async function processNext(
     const outputText = readOutputText(outputFile)
     saveCompletedInflightSnapshot(inflight, completionStatus, outputText || completionPreview)
     cleanupInflight(inflight.id)
+    // @20260513-im-btw-side-fork: 清理 fork session JSONL 文件（成功/失败/cancel 三路径都到这里）
+    if (msg.forkSessionId) {
+      try {
+        const driver = getDriver(binding.tool ?? 'claude') as unknown as { deleteForkSession?: (id: string, cwd: string) => void }
+        driver.deleteForkSession?.(msg.forkSessionId, binding.cwd)
+      } catch (err) {
+        log(`[queue] fork session 清理失败（忽略）: ${err}`)
+      }
+    }
     group.currentChild = null
     group.state = 'idle'
     // 继续处理队列

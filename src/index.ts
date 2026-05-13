@@ -451,12 +451,19 @@ export async function startDaemon(): Promise<void> {
         at: 'OK',
         in: 'OK',
         cron: 'OK',
+        btw: 'OnIt',          // 🫡 收到，旁路讨论开始（@20260513-im-btw-side-fork）
       }
       react(cmdEmoji[cmd.command] ?? 'OK')
 
       try {
         const hadBindingBefore = Boolean(getBinding(conversationId))
-        const reply = await handleCommand(cmd, conversationId, config, transport)
+        // @20260513-im-btw-side-fork: /btw 需要 sendReply 闭包以 enqueue fork turn；
+        // 其他命令不用 sendReply 但接受它无副作用
+        const btwSendReply = async (reply: string | OutgoingMessage) => {
+          if (typeof reply === 'string' && queueDelayedReply(conversationId, reply)) return
+          await send(reply)
+        }
+        const reply = await handleCommand(cmd, conversationId, config, transport, btwSendReply)
         const binding = getBinding(conversationId)
         // recap 只在 /fc 成功重连时发生，那条路径返回的一定是 string
         if (typeof reply === 'string' && shouldSendFcRecap(cmd, hadBindingBefore, Boolean(binding), config.recapBudget)) {
@@ -481,7 +488,8 @@ export async function startDaemon(): Promise<void> {
           } else {
             await sendSystem(reply)
           }
-        } else {
+        } else if (typeof reply !== 'string' || reply.trim() !== '') {
+          // /btw 在 enqueue 后返回空字符串,跳过立即回执（AI 答案后续从 stream 流回）
           await sendSystem(reply)
         }
       } catch (err) {
