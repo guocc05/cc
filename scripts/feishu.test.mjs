@@ -6,10 +6,14 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-feishu-'))
+process.env.HOME = testHome
+fs.mkdirSync(path.join(testHome, '.im2cc', 'data'), { recursive: true })
+
 const { FeishuAdapter, computeNextDelayMs, BACKOFF_TIERS } = await import(path.join(rootDir, 'dist', 'src', 'feishu.js'))
 
-// 测试隔离：pollOnce 内部会调用 setCursor 写真实 ~/.im2cc/data/poll-cursors.json。
-// 全测试套件 before/after 备份+恢复，避免污染用户数据（@20260511 已踩过的坑）。
+// 测试隔离：pollOnce 内部会调用 setCursor；这里用临时 HOME，避免污染用户数据。
 const CURSORS_FILE = path.join(os.homedir(), '.im2cc', 'data', 'poll-cursors.json')
 let cursorsBackup = null
 before(() => {
@@ -21,6 +25,7 @@ after(() => {
   } else {
     fs.writeFileSync(CURSORS_FILE, cursorsBackup)
   }
+  fs.rmSync(testHome, { recursive: true, force: true })
 })
 
 function makeConfig() {

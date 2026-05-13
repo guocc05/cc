@@ -298,7 +298,15 @@ function tmuxConnect(tmuxSession: string): void {
     } else {
       execFileSync('tmux', ['attach', '-d', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'inherit' })
     }
-  } catch {
+  } catch (err) {
+    fcTraceLog('fc.tmux_connect_error', {
+      tmuxSession,
+      tmuxEnv: process.env.TMUX ?? null,
+      error: err instanceof Error ? err.message : String(err),
+      status: (err as { status?: number })?.status ?? null,
+      signal: (err as { signal?: string })?.signal ?? null,
+      stderr: (err as { stderr?: Buffer })?.stderr?.toString().slice(0, 500) ?? null,
+    })
     console.log(`tmux 操作失败。手动运行: tmux attach -t '=${tmuxSession}'`)
   }
 }
@@ -1017,6 +1025,7 @@ async function cmdConnect(): Promise<void> {
     fcTraceLog('fc.branch.attach_existing', { sessionName: session.name, tmuxSession: tmux })
     console.log(`接入 "${session.name}" (活跃)`)
     tmuxConnect(tmux)
+    fcTraceLog('fc.connect_returned', { tmuxSession: tmux, tmuxEnv: process.env.TMUX ?? null })
     return
   }
 

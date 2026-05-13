@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+import { test, after } from 'node:test'
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import fs from 'node:fs'
@@ -6,8 +6,16 @@ import os from 'node:os'
 import path from 'node:path'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-office-upgrader-'))
+process.env.HOME = testHome
+
 const upgrader = await import(path.join(rootDir, 'dist', 'src', 'office-upgrader.js'))
 const fileStaging = await import(path.join(rootDir, 'dist', 'src', 'file-staging.js'))
+
+after(() => {
+  fs.rmSync(testHome, { recursive: true, force: true })
+})
 
 test('needsLegacyUpgrade returns target ext for legacy formats', () => {
   assert.equal(fileStaging.needsLegacyUpgrade('a.doc'), 'docx')

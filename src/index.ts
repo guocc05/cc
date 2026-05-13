@@ -39,6 +39,7 @@ import {
   startWorkPhaseIfWaiting,
 } from './anti-pomodoro.js'
 import { initScheduler } from './scheduler.js'
+import { startTmuxWatcher, stopTmuxWatcher } from './tmux-watcher.js'
 import { structureSystemReply } from './message-format.js'
 import {
   startAskUserBridge,
@@ -158,8 +159,16 @@ function acquireLock(): boolean {
       }))
       writePidFile()
       process.once('exit', cleanup)
-      process.once('SIGTERM', () => { cleanup(); process.exit(0) })
-      process.once('SIGINT', () => { cleanup(); process.exit(0) })
+      process.once('SIGTERM', () => {
+        log('[signal] 收到 SIGTERM，守护进程退出')
+        cleanup()
+        process.exit(0)
+      })
+      process.once('SIGINT', () => {
+        log('[signal] 收到 SIGINT，守护进程退出')
+        cleanup()
+        process.exit(0)
+      })
       return true
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code !== 'EEXIST') throw err
@@ -692,6 +701,15 @@ export async function startDaemon(): Promise<void> {
     const cwds = listActiveBindings().map(b => b.cwd)
     runInboxCleanup(cwds, config.inboxTtlMinutes)
   }, 10 * 60 * 1000)
+
+  // tmux session 生灭旁观仪表 (@20260512-fc-tmux-client-preempt v1.1)
+  // 纯观察:每 10s 跑一次 tmux list-sessions diff,把消失的 im2cc-* session
+  // 记录到 ~/.im2cc/logs/tmux-watch.log,带当时上下文(registry/binding/inflight)。
+  // 配合 bin/im2cc.ts:fcTraceLog 互补,准备下次复现时定位 [exited] 根因。
+  startTmuxWatcher()
+  process.on('exit', () => {
+    try { stopTmuxWatcher() } catch {}
+  })
 
   // 运行时单实例自检（纵深防御第 2 层）
   // 每 30 秒验证：PID 文件仍是自己 + 没有其他守护进程。

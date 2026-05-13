@@ -108,6 +108,16 @@ function spawnIdleNode(args, options = {}) {
   })
 }
 
+function processListingFailureMessage() {
+  const probe = spawnSync('pgrep', ['-f', '__im2cc_process_listing_probe_no_match__'], {
+    encoding: 'utf-8',
+  })
+
+  if (probe.error) return probe.error.message
+  if (probe.status === 0 || probe.status === 1) return ''
+  return (probe.stderr || probe.stdout || `pgrep exited with status ${probe.status}`).trim()
+}
+
 function assertAlive(pid) {
   process.kill(pid, 0)
 }
@@ -165,8 +175,20 @@ test('status/stop do not trust an unrelated live pid from daemon.pid', async () 
   }
 })
 
-test('killAllDaemonProcesses kills zombie processes on startup', async () => {
-  const { killAllDaemonProcesses, DAEMON_PROCESS_TITLE } = await import(daemonProcessModulePath)
+test('killAllDaemonProcesses kills zombie processes on startup', async (t) => {
+  const { killAllDaemonProcesses, listDaemonProcessPids, DAEMON_PROCESS_TITLE } = await import(daemonProcessModulePath)
+
+  const processListingFailure = processListingFailureMessage()
+  if (processListingFailure) {
+    t.skip(`process listing unavailable: ${processListingFailure}`)
+    return
+  }
+
+  const preExisting = listDaemonProcessPids(undefined, process.pid)
+  if (preExisting.length > 0) {
+    t.skip(`live im2cc daemon already running (PID: ${preExisting.join(', ')})`)
+    return
+  }
 
   // 创建两个模拟僵尸进程（设置 process.title = im2cc-daemon）
   const zombie1 = spawnIdleNode(['-e', `process.title='${DAEMON_PROCESS_TITLE}'; setInterval(()=>{},1000)`])
@@ -225,12 +247,23 @@ test('daemon identity matcher recognizes marker/title across install paths', asy
   )
 })
 
-test('start launches daemon without false IPC disconnect failure', async () => {
+test('start launches daemon without false IPC disconnect failure', async (t) => {
   const homeDir = createHomeDir()
-  const wechatStub = await startWechatStubServer()
-  writeWeChatAccount(homeDir, wechatStub.baseUrl)
+  let wechatStub
 
   try {
+    try {
+      wechatStub = await startWechatStubServer()
+    } catch (err) {
+      if (err?.code === 'EPERM' || err?.code === 'EACCES') {
+        t.skip(`local HTTP server unavailable: ${err.message}`)
+        return
+      }
+      throw err
+    }
+
+    writeWeChatAccount(homeDir, wechatStub.baseUrl)
+
     const start = runCli(homeDir, ['start'])
     assert.equal(start.status, 0, start.stderr)
     assert.match(start.stdout, /守护进程已启动/)
@@ -245,6 +278,6 @@ test('start launches daemon without false IPC disconnect failure', async () => {
     assert.match(stop.stdout, /已停止守护进程/)
   } finally {
     runCli(homeDir, ['stop'])
-    await wechatStub.close()
+    await wechatStub?.close()
   }
 })
