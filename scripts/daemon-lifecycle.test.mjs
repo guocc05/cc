@@ -248,6 +248,20 @@ test('daemon identity matcher recognizes marker/title across install paths', asy
 })
 
 test('start launches daemon without false IPC disconnect failure', async (t) => {
+  const { listDaemonProcessPids } = await import(daemonProcessModulePath)
+
+  const processListingFailure = processListingFailureMessage()
+  if (processListingFailure) {
+    t.skip(`process listing unavailable: ${processListingFailure}`)
+    return
+  }
+
+  const preExisting = listDaemonProcessPids(undefined, process.pid)
+  if (preExisting.length > 0) {
+    t.skip(`live im2cc daemon already running (PID: ${preExisting.join(', ')})`)
+    return
+  }
+
   const homeDir = createHomeDir()
   let wechatStub
 
