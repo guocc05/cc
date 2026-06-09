@@ -7,7 +7,7 @@ import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-queue-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-queue-'))
 process.env.HOME = testHome
 
 const queue = await import(path.join(rootDir, 'dist', 'src', 'queue.js'))
@@ -15,7 +15,7 @@ const session = await import(path.join(rootDir, 'dist', 'src', 'session.js'))
 const tools = await import(path.join(rootDir, 'dist', 'src', 'tool-driver.js'))
 
 function resetState() {
-  fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
+  fs.rmSync(path.join(testHome, '.cc'), { recursive: true, force: true })
 }
 
 function wait(ms) {
@@ -81,7 +81,7 @@ test('queue records a recent completed snapshot for desktop handoff recall', { c
 test('recoverOnStartup drops inflight results for detached conversations', { concurrency: false }, async () => {
   resetState()
 
-  const inflightDir = path.join(testHome, '.im2cc', 'data', 'inflight')
+  const inflightDir = path.join(testHome, '.cc', 'data', 'inflight')
   fs.mkdirSync(inflightDir, { recursive: true })
 
   const meta = {
@@ -111,7 +111,7 @@ test('recoverOnStartup drops inflight results for detached conversations', { con
 test('interruptInflightTasksForSession stops detached child processes by session', { concurrency: false }, async () => {
   resetState()
 
-  const inflightDir = path.join(testHome, '.im2cc', 'data', 'inflight')
+  const inflightDir = path.join(testHome, '.cc', 'data', 'inflight')
   fs.mkdirSync(inflightDir, { recursive: true })
 
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], {
@@ -151,7 +151,7 @@ test('interruptInflightTasksForSession stops detached child processes by session
 test('listCompletedInflightSnapshotsForSession prunes expired snapshots', { concurrency: false }, async () => {
   resetState()
 
-  const inflightDir = path.join(testHome, '.im2cc', 'data', 'inflight')
+  const inflightDir = path.join(testHome, '.cc', 'data', 'inflight')
   fs.mkdirSync(inflightDir, { recursive: true })
 
   const staleSnapshot = {

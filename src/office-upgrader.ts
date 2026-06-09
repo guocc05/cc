@@ -54,7 +54,7 @@ async function runUpgradeOnce(
 
   fs.mkdirSync(outDir, { recursive: true })
 
-  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-soffice-'))
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-soffice-'))
   const profileUri = 'file://' + profileDir
 
   const args = [

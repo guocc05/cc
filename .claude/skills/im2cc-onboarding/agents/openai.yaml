@@ -1,4 +1,4 @@
 interface:
-  display_name: "Im2cc Onboarding"
-  short_description: "Help with Im2cc Onboarding tasks"
-  default_prompt: "Use $im2cc-onboarding to install, configure, and validate im2cc on this machine."
+  display_name: "Cc Onboarding"
+  short_description: "Help with Cc Onboarding tasks"
+  default_prompt: "Use $cc-onboarding to install, configure, and validate cc on this machine."

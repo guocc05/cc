@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-commands-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-commands-'))
 process.env.HOME = testHome
 
 const commands = await import(path.join(rootDir, 'dist', 'src', 'commands.js'))
@@ -17,7 +17,7 @@ const session = await import(path.join(rootDir, 'dist', 'src', 'session.js'))
 await import(path.join(rootDir, 'dist', 'src', 'claude-driver.js'))
 
 function resetState() {
-  fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
+  fs.rmSync(path.join(testHome, '.cc'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, 'Code'), { recursive: true, force: true })
 }
 
@@ -54,7 +54,7 @@ test('help and mode list surface aliases for mobile input', async () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)
-  registerSession('alpha', 'im2cc', 'claude', 'conv-help', 'auto')
+  registerSession('alpha', 'cc', 'claude', 'conv-help', 'auto')
 
   const modeCmd = commands.parseCommand('/mode')
   assert.ok(modeCmd)
@@ -69,7 +69,7 @@ test('help and mode list surface aliases for mobile input', async () => {
   const helpOutput = await commands.handleCommand(helpCmd, 'conv-help', config)
   assert.match(helpOutput, /首次使用：先在电脑终端运行 fn <名称>/)
   assert.match(helpOutput, /fhelp\s+— 查看帮助/)
-  assert.match(helpOutput, /im2cc update\s+— 更新到最新版本/)
+  assert.match(helpOutput, /cc update\s+— 更新到最新版本/)
   assert.match(helpOutput, /fn <名称>\s+— 用当前目录创建对话/)
   assert.match(helpOutput, /fn-codex <名称>/)
   assert.match(helpOutput, /fn-gemini <名称>/)
@@ -97,7 +97,7 @@ test('mode aliases switch current session mode and default mode', async () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)
-  registerSession('alpha', 'im2cc', 'claude', 'conv-mode', 'default')
+  registerSession('alpha', 'cc', 'claude', 'conv-mode', 'default')
 
   const switchCmd = commands.parseCommand('/mode au')
   assert.ok(switchCmd)
@@ -147,7 +147,7 @@ test('/fl groups sessions by tool, sorts names, and keeps cwd basename', async (
   configMod.saveConfig(config)
   registerSession('zebra', 'website', 'codex', 'conv-zebra')
   registerSession('beta', 'portal', 'claude', 'conv-beta')
-  registerSession('alpha', 'im2cc', 'claude', 'conv-alpha')
+  registerSession('alpha', 'cc', 'claude', 'conv-alpha')
 
   const flCmd = commands.parseCommand('/fl')
   assert.ok(flCmd)
@@ -156,13 +156,13 @@ test('/fl groups sessions by tool, sorts names, and keeps cwd basename', async (
   assert.match(output, /📋 已注册的对话 \(3\):/)
   assert.match(output, /── Claude ──/)
   assert.match(output, /── Codex ──/)
-  assert.match(output, /alpha \(im2cc\)/)
+  assert.match(output, /alpha \(cc\)/)
   assert.match(output, /beta \(portal\)/)
   assert.match(output, /zebra \(website\)/)
 
   const claudeIndex = output.indexOf('── Claude ──')
   const codexIndex = output.indexOf('── Codex ──')
-  const alphaIndex = output.indexOf('  alpha (im2cc)')
+  const alphaIndex = output.indexOf('  alpha (cc)')
   const betaIndex = output.indexOf('  beta (portal)')
   assert.ok(claudeIndex >= 0 && codexIndex > claudeIndex, 'tool sections should follow stable display order')
   assert.ok(alphaIndex > claudeIndex && betaIndex > alphaIndex, 'Claude sessions should sort by name')
@@ -245,7 +245,7 @@ test('first-run guidance prefers computer-side creation and IM /fn requires expl
   const fnOutput = replyText(fnReply)
   assert.match(fnOutput, /📝 缺少项目目录/)
   assert.match(fnOutput, /用法：\/fn <对话名> <项目短名 \| 完整路径>/)
-  assert.match(fnOutput, /示例：\/fn demo im2cc/)
+  assert.match(fnOutput, /示例：\/fn demo cc/)
   assert.match(fnOutput, /已用过的项目：\/ls/)
 })
 
@@ -255,7 +255,7 @@ test('/fn with no args shows usage card, not project list', async () => {
   configMod.saveConfig(config)
 
   // registry 里放两个用过的项目，确保 usage card 不应顺带列出它们（教学卡片聚焦语法）
-  registerSession('alpha', 'im2cc', 'claude', 'conv-ignore')
+  registerSession('alpha', 'cc', 'claude', 'conv-ignore')
   registerSession('beta', 'portal', 'claude', 'conv-ignore2')
 
   const fnCmd = commands.parseCommand('/fn')
@@ -265,12 +265,12 @@ test('/fn with no args shows usage card, not project list', async () => {
   const out = replyText(reply)
   assert.match(out, /📝 创建新对话/)
   assert.match(out, /用法：\/fn <对话名> <项目短名 \| 完整路径>/)
-  assert.match(out, /示例：\/fn auth im2cc/)
+  assert.match(out, /示例：\/fn auth cc/)
   assert.match(out, /对话名.*给这次对话起的标签/)
   assert.match(out, /项目目录：短名=之前在电脑端用过的项目/)
   assert.match(out, /已用过的项目：\/ls/)
   // 教学卡片不应当场列出项目
-  assert.doesNotMatch(out, /^im2cc\b/m)
+  assert.doesNotMatch(out, /^cc\b/m)
   assert.doesNotMatch(out, /^portal\b/m)
 })
 
@@ -280,7 +280,7 @@ test('/ls lists projects from registry (used projects)', async () => {
   configMod.saveConfig(config)
 
   // 在 registry 里登记 3 个 session，对应 3 个不同的 cwd
-  registerSession('alpha', 'im2cc', 'claude', 'conv-ls-a')
+  registerSession('alpha', 'cc', 'claude', 'conv-ls-a')
   registerSession('beta', 'portal', 'claude', 'conv-ls-b')
   registerSession('gamma', 'aicam', 'codex', 'conv-ls-c')
 
@@ -290,7 +290,7 @@ test('/ls lists projects from registry (used projects)', async () => {
   assert.equal(reply && reply.kind, 'text', '/ls 必须返回纯文本')
   const out = replyText(reply)
   assert.match(out, /📁 已用过的项目 \(3\)/)
-  assert.match(out, /im2cc\s+\(/)
+  assert.match(out, /cc\s+\(/)
   assert.match(out, /portal\s+\(/)
   assert.match(out, /aicam\s+\(/)
   assert.match(out, /用法：\/fn <对话名> <项目短名>/)
@@ -314,16 +314,16 @@ test('/fn with unknown short name suggests similar names and offers full-path es
   const config = configForTests()
   configMod.saveConfig(config)
 
-  registerSession('alpha', 'im2cc', 'claude', 'conv-fn-a')
+  registerSession('alpha', 'cc', 'claude', 'conv-fn-a')
   registerSession('beta', 'aicam', 'claude', 'conv-fn-b')
 
-  const fnCmd = commands.parseCommand('/fn demo im2ccx')
+  const fnCmd = commands.parseCommand('/fn demo ccx')
   const reply = await commands.handleCommand(fnCmd, 'conv-typo', config)
   const out = replyText(reply)
-  assert.match(out, /❌ 没找到项目 "im2ccx"/)
-  assert.match(out, /或你是不是想找：im2cc/)
+  assert.match(out, /❌ 没找到项目 "ccx"/)
+  assert.match(out, /或你是不是想找：cc/)
   assert.match(out, /在电脑端 fn <名称> 先创建一个对话/)
-  assert.match(out, /在这里用完整路径.*~\/Code\/im2ccx/)
+  assert.match(out, /在这里用完整路径.*~\/Code\/ccx/)
   assert.match(out, /已用过的项目列表：\/ls/)
 })
 
@@ -336,9 +336,9 @@ test('/fn with claudeLauncher but no imDefaultClaudeProfile is rejected with gui
   }
   configMod.saveConfig(config)
 
-  registerSession('existing', 'im2cc', 'claude', 'conv-unused')
+  registerSession('existing', 'cc', 'claude', 'conv-unused')
 
-  const fnCmd = commands.parseCommand('/fn newsess im2cc')
+  const fnCmd = commands.parseCommand('/fn newsess cc')
   const reply = await commands.handleCommand(fnCmd, 'conv-launcher-reject', config)
   const out = replyText(reply)
   assert.match(out, /❌ 当前机器已启用本地 Claude 渠道选择器/)
@@ -355,9 +355,9 @@ test('/fn with claudeLauncher and imDefaultClaudeProfile set does not reject (pa
   }
   configMod.saveConfig(config)
 
-  registerSession('existing', 'im2cc', 'claude', 'conv-unused-2')
+  registerSession('existing', 'cc', 'claude', 'conv-unused-2')
 
-  const fnCmd = commands.parseCommand('/fn newsess im2cc')
+  const fnCmd = commands.parseCommand('/fn newsess cc')
   const reply = await commands.handleCommand(fnCmd, 'conv-launcher-pass', config)
   const out = replyText(reply)
   // 核心断言：不再出现"拒绝"文案；真正的 createSession 会因 fake-launcher 不存在而失败，

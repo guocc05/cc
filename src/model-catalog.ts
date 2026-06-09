@@ -1,6 +1,6 @@
 /**
- * @input:    ToolId, Im2ccConfig.modelCatalogs（可选用户覆盖）
- * @output:   ModelOption[], BUILTIN_MODEL_CATALOG, getModelCatalog(), resolveModelInput(), findShortNameByFullName() — /model 候选清单 + 短名映射；双轨：内置默认 + ~/.im2cc/config.json 用户覆盖
+ * @input:    ToolId, CcConfig.modelCatalogs（可选用户覆盖）
+ * @output:   ModelOption[], BUILTIN_MODEL_CATALOG, getModelCatalog(), resolveModelInput(), findShortNameByFullName() — /model 候选清单 + 短名映射；双轨：内置默认 + ~/.cc/config.json 用户覆盖
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
@@ -19,7 +19,7 @@ export interface ModelOption {
 
 /**
  * 内置默认清单 — 作为 config.modelCatalogs 缺失时的兜底。
- * 用户想用新模型 / 自定义偏好子集时，在 ~/.im2cc/config.json 加 modelCatalogs 完全替换。
+ * 用户想用新模型 / 自定义偏好子集时，在 ~/.cc/config.json 加 modelCatalogs 完全替换。
  *
  * 不内置 Gemini —— Gemini 进入维护模式（ARCHITECTURE §4.8）。
  */
@@ -48,7 +48,7 @@ function isValidModelOption(x: unknown): x is ModelOption {
 
 /**
  * 取指定工具的模型清单。优先级：
- *   1. ~/.im2cc/config.json 的 modelCatalogs.<tool>（非空数组 + 校验通过的条目）
+ *   1. ~/.cc/config.json 的 modelCatalogs.<tool>（非空数组 + 校验通过的条目）
  *   2. BUILTIN_MODEL_CATALOG.<tool>
  *   3. 其他工具（gemini）→ 空数组
  *

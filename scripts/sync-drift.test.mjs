@@ -7,7 +7,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-sync-drift-home-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-sync-drift-home-'))
 process.env.HOME = testHome
 process.on('exit', () => {
   fs.rmSync(testHome, { recursive: true, force: true })
@@ -18,7 +18,7 @@ const { syncDriftedSession } = await import('../dist/src/discover.js')
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
 function mkTempClaudeSlug() {
-  const tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-sync-drift-'))
+  const tmpCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-sync-drift-'))
   const slug = '-' + tmpCwd.replace(/^\//, '').replaceAll('/', '-')
   const slugDir = path.join(os.homedir(), '.claude', 'projects', slug)
   fs.mkdirSync(slugDir, { recursive: true })

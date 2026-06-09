@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/data/bindings.json, Binding 数据结构（含 /model 写入的 modelOverride）
+ * @input:    ~/.cc/data/bindings.json, Binding 数据结构（含 /model 写入的 modelOverride）
  * @output:   createBinding(), getBinding(), updateBinding(), archiveBinding(), listActiveBindings(), isDuplicate() — 会话绑定与跨进程消息去重
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */

@@ -1,5 +1,5 @@
 /**
- * @input:    Im2ccConfig, Transport adapters, AI coding tool CLIs, recap, file-staging, office-upgrader, attachment-prompt, askuser-bridge
+ * @input:    CcConfig, Transport adapters, AI coding tool CLIs, recap, file-staging, office-upgrader, attachment-prompt, askuser-bridge
  * @output:   startDaemon(), shouldSendFcRecap() — 主入口：全局异常兜底、初始化各模块、守护进程单实例锁、启动 transport 轮询、消息路由、/fc 上下文回顾、文件暂存与合并（含 office 文档旧格式 soffice 升格）、按 driver capability 拼装 prompt、反茄钟闸门、AskUserQuestion 桥接（拉起 socket / 订阅 ask/timeout 事件 / pending 时把用户文本视为答案）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -14,6 +14,7 @@ import { parseCommand, handleCommand, applyModelSelection, type ParsedCommand } 
 import { consumePendingModelSelection } from './model-pending.js'
 import { enqueue, recoverOnStartup } from './queue.js'
 import { FeishuAdapter } from './feishu.js'
+import { isTmuxAvailable, findProcesses } from './process-utils.js'
 // 导入所有 tool driver（每个文件末尾自动注册到全局 driver 注册表）
 import './claude-driver.js'
 import './codex-driver.js'
@@ -56,7 +57,7 @@ import {
   daemonMainModulePath,
   inspectProcess,
   isDaemonEntrypointInvocation,
-  isIm2ccDaemonProcess,
+  isCcDaemonProcess,
   killAllDaemonProcesses,
   listDaemonProcessPids,
   prepareDaemonProcessIdentity,
@@ -79,19 +80,29 @@ export function shouldSendFcRecap(
 }
 
 /**
- * 检查某个 session 是否正在被本地 tmux 使用。
+ * 检查某个 session 是否正在被本地 tmux 使用（跨平台）。
  * Registry 是工具身份的唯一权威来源：旧格式 tmux session 需验证实际进程。
  */
 function isSessionLocallyActive(sessionName: string, tool: string = 'claude'): boolean {
+  // Windows 不支持 tmux，通过进程模式匹配
+  if (process.platform === 'win32') {
+    return isSessionLocallyActiveWindows(sessionName, tool)
+  }
+
+  // macOS/Linux: 使用 tmux 检查
+  if (!isTmuxAvailable()) {
+    return false
+  }
+
   // 新格式：名称已编码工具身份，直接判断
-  const newName = `im2cc-${tool}-${sessionName}`
+  const newName = `cc-${tool}-${sessionName}`
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(newName)], { stdio: 'ignore' })
     return true
   } catch {}
 
   // 旧格式：存在时需验证进程是否匹配预期工具
-  const oldName = `im2cc-${sessionName}`
+  const oldName = `cc-${sessionName}`
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(oldName)], { stdio: 'ignore' })
   } catch {
@@ -106,6 +117,31 @@ function isSessionLocallyActive(sessionName: string, tool: string = 'claude'): b
     const cmd = execFileSync('ps', ['-p', pid, '-o', 'command='],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim()
     return cmd === tool || cmd.startsWith(`${tool} `) || cmd.endsWith(`/${tool}`)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Windows 下检查 session 是否活跃（通过进程模式匹配）
+ */
+function isSessionLocallyActiveWindows(sessionName: string, tool: string): boolean {
+  try {
+    const pattern = `${tool}.*${sessionName}`
+    const output = execFileSync(
+      'wmic',
+      ['process', 'where', `commandline like '%${pattern}%'`, 'get', 'processid'],
+      { encoding: 'utf-8', timeout: 10000 }
+    ).trim()
+
+    const lines = output.split('\n').slice(1) // 跳过标题
+    for (const line of lines) {
+      const pid = parseInt(line.trim(), 10)
+      if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+        return true
+      }
+    }
+    return false
   } catch {
     return false
   }
@@ -182,8 +218,8 @@ function acquireLock(): boolean {
   const existingPid = daemonPidRecord.pid
 
   if (existingPid !== null) {
-    if (isIm2ccDaemonProcess(existingPid, DAEMON_ENTRY)) {
-      error(`另一个 im2cc 守护进程已在运行 (PID: ${existingPid})，本次启动终止`)
+    if (isCcDaemonProcess(existingPid, DAEMON_ENTRY)) {
+      error(`另一个 cc 守护进程已在运行 (PID: ${existingPid})，本次启动终止`)
       return false
     }
     const state = inspectProcess(existingPid) === 'running' ? '无关进程占用了旧 PID' : '旧 PID 已失效'
@@ -194,7 +230,7 @@ function acquireLock(): boolean {
     try {
       const stat = fs.statSync(lockDir)
       if ((Date.now() - stat.mtimeMs) < DAEMON_LOCK_STARTUP_GRACE_MS) {
-        error('另一个 im2cc 守护进程正在启动中，本次启动终止')
+        error('另一个 cc 守护进程正在启动中，本次启动终止')
         return false
       }
       const reason = daemonPidRecord.present ? '清理无效守护进程锁元数据' : '清理无主守护进程锁'
@@ -211,7 +247,7 @@ function acquireLock(): boolean {
 
   if (tryAcquire()) return true
 
-  error('另一个 im2cc 守护进程正在启动中，本次启动终止')
+  error('另一个 cc 守护进程正在启动中，本次启动终止')
   return false
 }
 
@@ -254,7 +290,7 @@ export async function startDaemon(): Promise<void> {
     process.exit(1)
   }
 
-  log('im2cc 启动中...')
+  log('cc 启动中...')
 
   // AskUserQuestion 桥接 — 必须在 transport 启动前就绪，避免 hook 早期连接失败
   try {
@@ -632,7 +668,7 @@ export async function startDaemon(): Promise<void> {
   }
 
   if (adapters.size === 0) {
-    throw new Error('没有可用的 transport，请先配置可用的 IM 通道（im2cc setup / im2cc wechat login）')
+    throw new Error('没有可用的 transport，请先配置可用的 IM 通道（cc setup / cc wechat login）')
   }
 
   antiPomodoro.start()
@@ -689,7 +725,7 @@ export async function startDaemon(): Promise<void> {
         const tool = binding.tool ?? reg?.tool ?? 'claude'
         const toolLabel = tool === 'claude' ? 'Claude Code' : tool.charAt(0).toUpperCase() + tool.slice(1)
         await sendToConversation('feishu', binding.conversationId,
-          `im2cc 已重启\n${name}  ·  ${toolLabel}\n${binding.cwd}\n${binding.permissionMode}`)
+          `cc 已重启\n${name}  ·  ${toolLabel}\n${binding.cwd}\n${binding.permissionMode}`)
       } catch { /* 群可能已被删除 */ }
     }
   }
@@ -703,13 +739,16 @@ export async function startDaemon(): Promise<void> {
   }, 10 * 60 * 1000)
 
   // tmux session 生灭旁观仪表 (@20260512-fc-tmux-client-preempt v1.1)
-  // 纯观察:每 10s 跑一次 tmux list-sessions diff,把消失的 im2cc-* session
-  // 记录到 ~/.im2cc/logs/tmux-watch.log,带当时上下文(registry/binding/inflight)。
-  // 配合 bin/im2cc.ts:fcTraceLog 互补,准备下次复现时定位 [exited] 根因。
-  startTmuxWatcher()
-  process.on('exit', () => {
-    try { stopTmuxWatcher() } catch {}
-  })
+  // 仅在 macOS 启用；Windows 无 tmux 时不启动该观察器，避免无效轮询噪音。
+  if (process.platform === 'darwin') {
+    // 纯观察:每 10s 跑一次 tmux list-sessions diff,把消失的 cc-* session
+    // 记录到 ~/.cc/logs/tmux-watch.log,带当时上下文(registry/binding/inflight)。
+    // 配合 bin/cc.ts:fcTraceLog 互补,准备下次复现时定位 [exited] 根因。
+    startTmuxWatcher()
+    process.on('exit', () => {
+      try { stopTmuxWatcher() } catch {}
+    })
+  }
 
   // 运行时单实例自检（纵深防御第 2 层）
   // 每 30 秒验证：PID 文件仍是自己 + 没有其他守护进程。
@@ -738,7 +777,7 @@ export async function startDaemon(): Promise<void> {
     }
   }, SELF_CHECK_INTERVAL_MS)
 
-  log(`im2cc 已启动，${adapters.size} 个 transport，${activeBindings.length} 个活跃绑定`)
+  log(`cc 已启动，${adapters.size} 个 transport，${activeBindings.length} 个活跃绑定`)
 }
 
 // 被后台子进程或 node 直接执行时，自动启动 daemon

@@ -1,5 +1,5 @@
 <!--
-@input:    当前机器上的 im2cc 安装状态、配置状态、渠道接入状态
+@input:    当前机器上的 cc 安装状态、配置状态、渠道接入状态
 @output:   onboarding 状态机定义与恢复规则
 @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释
 -->

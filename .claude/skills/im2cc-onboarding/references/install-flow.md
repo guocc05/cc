@@ -1,5 +1,5 @@
 <!--
-@input:    本机依赖、npm 全局目录、PATH、~/.im2cc/ 配置
+@input:    本机依赖、npm 全局目录、PATH、~/.cc/ 配置
 @output:   基础安装与首次启动的执行规则
 @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释
 -->
@@ -18,14 +18,14 @@ Verify:
 ## Primary install path
 
 ```bash
-npm i -g im2cc
-im2cc onboard
+npm i -g cc
+cc onboard
 ```
 
 Failure modes:
 
-- Permission denied writing to npm prefix → configure `~/.npm-global` prefix as above, or use `sudo npm i -g im2cc`.
-- Package not found (404) → im2cc hasn't been published to npm yet; fall back to source bootstrap below.
+- Permission denied writing to npm prefix → configure `~/.npm-global` prefix as above, or use `sudo npm i -g cc`.
+- Package not found (404) → cc hasn't been published to npm yet; fall back to source bootstrap below.
 - Network / registry issues → check `npm config get registry` and proxy; retry.
 
 ## Source bootstrap fallback
@@ -33,18 +33,18 @@ Failure modes:
 Only if npm install fails because the package isn't published yet:
 
 ```bash
-git clone https://github.com/JVever/im2cc.git
-cd im2cc
+git clone https://github.com/JVever/cc.git
+cd cc
 bash install.sh            # npm install + npm run build + npm link
-im2cc install-shell        # writes fn/fc/fl to ~/.zshrc
-im2cc install-hook         # writes Claude SessionStart hook
-im2cc onboard
+cc install-shell        # writes fn/fc/fl to ~/.zshrc
+cc install-hook         # writes Claude SessionStart hook
+cc onboard
 ```
 
 ## After install
 
-- `im2cc doctor` should pass basic checks
-- `im2cc onboard` guides the rest: IM setup, daemon, first session, auto-start, hardening
+- `cc doctor` should pass basic checks
+- `cc onboard` guides the rest: IM setup, daemon, first session, auto-start, hardening
 
 ## Important rule
 

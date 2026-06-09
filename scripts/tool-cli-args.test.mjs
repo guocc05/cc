@@ -32,9 +32,9 @@ test('claude --name support can be forced on when available', async () => {
   const cliArgs = await import(`${cliArgsModuleUrl}?case=with-name`)
 
   assert.equal(compat.claudeSupportsSessionNameFlag(), true)
-  assert.deepEqual(compat.claudeSessionNameArgs('demo'), ['--name', 'im2cc:demo'])
-  assert.deepEqual(cliArgs.toolCreateArgs('claude', 'sid-1', 'demo'), ['claude', '--session-id', 'sid-1', '--dangerously-skip-permissions', '--name', 'im2cc:demo'])
-  assert.deepEqual(cliArgs.toolResumeArgs('claude', 'sid-1', 'demo'), ['claude', '--resume', 'sid-1', '--dangerously-skip-permissions', '--name', 'im2cc:demo'])
+  assert.deepEqual(compat.claudeSessionNameArgs('demo'), ['--name', 'cc:demo'])
+  assert.deepEqual(cliArgs.toolCreateArgs('claude', 'sid-1', 'demo'), ['claude', '--session-id', 'sid-1', '--dangerously-skip-permissions', '--name', 'cc:demo'])
+  assert.deepEqual(cliArgs.toolResumeArgs('claude', 'sid-1', 'demo'), ['claude', '--resume', 'sid-1', '--dangerously-skip-permissions', '--name', 'cc:demo'])
 
   delete process.env.IM2CC_CLAUDE_SUPPORTS_NAME
   delete process.env.IM2CC_CLAUDE_LAUNCHER
@@ -57,7 +57,7 @@ test('gemini interactive args still work as best-effort path', async () => {
 })
 
 test('claude interactive args use configured launcher without affecting defaults', async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-launcher-home-'))
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-launcher-home-'))
   const launcherPath = path.join(tempDir, 'mock-claude-launcher')
   process.env.IM2CC_CLAUDE_SUPPORTS_NAME = '1'
   process.env.IM2CC_CLAUDE_LAUNCHER = launcherPath
@@ -77,7 +77,7 @@ test('claude interactive args use configured launcher without affecting defaults
         'sid-3',
         '--dangerously-skip-permissions',
         '--name',
-        'im2cc:demo',
+        'cc:demo',
       ],
     )
     assert.deepEqual(
@@ -93,7 +93,7 @@ test('claude interactive args use configured launcher without affecting defaults
         'sid-3',
         '--dangerously-skip-permissions',
         '--name',
-        'im2cc:demo',
+        'cc:demo',
       ],
     )
   } finally {

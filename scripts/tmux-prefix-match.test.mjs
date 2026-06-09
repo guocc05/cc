@@ -30,7 +30,7 @@ function killSessionIfExists(name) {
 test('tmuxExactTarget 返回 =<name> 形式', async () => {
   const { tmuxExactTarget } = await import(tmuxUtilPath)
   assert.equal(tmuxExactTarget('foo'), '=foo')
-  assert.equal(tmuxExactTarget('im2cc-claude-im2cc'), '=im2cc-claude-im2cc')
+  assert.equal(tmuxExactTarget('cc-claude-cc'), '=cc-claude-cc')
   assert.equal(tmuxExactTarget(''), '=')
 })
 
@@ -38,7 +38,7 @@ test('tmux -t <prefix> 默认 prefix match 行为存证 (修复前的 bug)', { s
   // 测试场景: 创建 longName, 不创建 shortName (前者 = 后者 + '01')
   // shortName 是 longName 的前缀, has-session 不带 = 会 prefix match 命中 longName
   const pid = process.pid
-  const shortName = `im2cc-test-prefix-foo-${pid}`
+  const shortName = `cc-test-prefix-foo-${pid}`
   const longName = `${shortName}01`
 
   try {
@@ -58,8 +58,8 @@ test('tmux -t <prefix> 默认 prefix match 行为存证 (修复前的 bug)', { s
 })
 
 test('Bug A 防回归: kill-session -t =<不存在的前缀> 不会误杀前缀重合的 session', { skip: !tmuxAvailable() }, () => {
-  const longName = `im2cc-test-killbug-foo01-${process.pid}`
-  const shortName = `im2cc-test-killbug-foo-${process.pid}`
+  const longName = `cc-test-killbug-foo01-${process.pid}`
+  const shortName = `cc-test-killbug-foo-${process.pid}`
 
   try {
     execFileSync('tmux', ['new-session', '-d', '-s', longName, 'sleep', '60'], { stdio: 'ignore' })
@@ -76,8 +76,8 @@ test('Bug A 防回归: kill-session -t =<不存在的前缀> 不会误杀前缀�
 })
 
 test('Bug B 防回归: has-session -t =<不存在的前缀> 返回不存在,即使有前缀重合的 session', { skip: !tmuxAvailable() }, () => {
-  const longName = `im2cc-test-hasbug-foo01-${process.pid}`
-  const shortName = `im2cc-test-hasbug-foo-${process.pid}`
+  const longName = `cc-test-hasbug-foo01-${process.pid}`
+  const shortName = `cc-test-hasbug-foo-${process.pid}`
 
   try {
     execFileSync('tmux', ['new-session', '-d', '-s', longName, 'sleep', '60'], { stdio: 'ignore' })

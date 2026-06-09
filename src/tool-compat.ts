@@ -28,6 +28,7 @@ export function claudeSupportsSessionNameFlag(): boolean {
       timeout: 5000,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: buildClaudeLauncherEnv({ phase: 'compat' }),
+      shell: process.platform === 'win32',
     })
     const helpText = `${result.stdout ?? ''}\n${result.stderr ?? ''}`
     claudeSupportsNameCache = result.status === 0 && /\b--name\b/.test(helpText)
@@ -40,5 +41,5 @@ export function claudeSupportsSessionNameFlag(): boolean {
 
 export function claudeSessionNameArgs(name?: string): string[] {
   if (!name) return []
-  return claudeSupportsSessionNameFlag() ? ['--name', `im2cc:${name}`] : []
+  return claudeSupportsSessionNameFlag() ? ['--name', `cc:${name}`] : []
 }

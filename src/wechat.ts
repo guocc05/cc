@@ -115,7 +115,7 @@ export class WeChatAdapter implements TransportAdapter {
     // 启动长轮询循环
     const pollBody = async (): Promise<void> => {
       if (!this.tokenValid) {
-        error('[wechat] token 已失效，停止轮询。请运行 im2cc wechat login 重新认证')
+        error('[wechat] token 已失效，停止轮询。请运行 cc wechat login 重新认证')
         return
       }
 
@@ -186,7 +186,7 @@ export class WeChatAdapter implements TransportAdapter {
       } catch (err) {
         if (String(err).includes('401') || String(err).includes('403')) {
           this.tokenValid = false
-          error('[wechat] token 已过期或无效，请运行 im2cc wechat login 重新认证')
+          error('[wechat] token 已过期或无效，请运行 cc wechat login 重新认证')
           return
         }
         error(`[wechat] 轮询失败: ${err}`)
@@ -221,7 +221,7 @@ export class WeChatAdapter implements TransportAdapter {
 
   private async sendRawText(conversationId: string, text: string): Promise<void> {
     if (!this.tokenValid) {
-      throw new Error('微信 token 已失效，请运行 im2cc wechat login 重新认证')
+      throw new Error('微信 token 已失效，请运行 cc wechat login 重新认证')
     }
 
     // conversationId 格式: wechat:<userId>
@@ -235,7 +235,7 @@ export class WeChatAdapter implements TransportAdapter {
 
     const contextToken = entry!.token
 
-    const clientId = `im2cc:${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
+    const clientId = `cc:${Date.now()}-${Math.random().toString(16).slice(2, 10)}`
     const body = {
       msg: {
         from_user_id: '',

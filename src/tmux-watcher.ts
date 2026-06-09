@@ -1,10 +1,10 @@
 /**
  * @input:    tmux server 的 list-sessions 输出 + registry + listActiveBindings + listInflightTasksForSession
- * @output:   ~/.im2cc/logs/tmux-watch.log — 每 10 秒 diff 出消失的 tmux session,记录上下文证据
+ * @output:   ~/.cc/logs/tmux-watch.log — 每 10 秒 diff 出消失的 tmux session,记录上下文证据
  * @rule:     如本文件 @input 或 @output 发生变化,必须更新本注释并检查 _INDEX.md
  *
  * 诊断仪表 B (@20260512-fc-tmux-client-preempt v1.1):纯旁观,无副作用。
- * 配合 bin/im2cc.ts:fcTraceLog 互补 — fc-trace 拿调用现场,tmux-watch 拿 idle 销毁现场。
+ * 配合 bin/cc.ts:fcTraceLog 互补 — fc-trace 拿调用现场,tmux-watch 拿 idle 销毁现场。
  */
 
 import fs from 'node:fs'
@@ -44,20 +44,20 @@ function appendLog(line: string): void {
 
 function recordVanished(name: string): void {
   const ts = new Date().toISOString()
-  // 仅观察 im2cc-* 前缀,其他 session 是用户私事不记录
-  if (!name.startsWith('im2cc-')) {
-    appendLog(`[${ts}] vanished session=${JSON.stringify(name)} kind=non-im2cc (ignored detail)`)
+  // 仅观察 cc-* 前缀,其他 session 是用户私事不记录
+  if (!name.startsWith('cc-')) {
+    appendLog(`[${ts}] vanished session=${JSON.stringify(name)} kind=non-cc (ignored detail)`)
     return
   }
 
-  // im2cc-<tool>-<sessionName> 或 im2cc-<sessionName>(旧格式)
+  // cc-<tool>-<sessionName> 或 cc-<sessionName>(旧格式)
   // 试解析出 sessionName,从 registry/bindings/inflight 找上下文
   let sessionName: string | null = null
-  const newFormat = /^im2cc-(claude|codex|gemini)-(.+)$/.exec(name)
+  const newFormat = /^cc-(claude|codex|gemini)-(.+)$/.exec(name)
   if (newFormat) {
     sessionName = newFormat[2]
   } else {
-    const old = /^im2cc-(.+)$/.exec(name)
+    const old = /^cc-(.+)$/.exec(name)
     sessionName = old?.[1] ?? null
   }
 
@@ -103,8 +103,8 @@ function tick(): void {
   if (lastKnown.size === 0 && now.size > 0) {
     // 首次 tick,仅记录基线,不报 added/removed
     const ts = new Date().toISOString()
-    const im2ccSessions = [...now].filter(s => s.startsWith('im2cc-'))
-    appendLog(`[${ts}] baseline im2cc_sessions=${JSON.stringify(im2ccSessions)} total=${now.size}`)
+    const ccSessions = [...now].filter(s => s.startsWith('cc-'))
+    appendLog(`[${ts}] baseline cc_sessions=${JSON.stringify(ccSessions)} total=${now.size}`)
     lastKnown = now
     return
   }
@@ -116,9 +116,9 @@ function tick(): void {
     recordVanished(name)
   }
 
-  // added 只对 im2cc-* 简单记录,作为时间轴参考
+  // added 只对 cc-* 简单记录,作为时间轴参考
   for (const name of added) {
-    if (name.startsWith('im2cc-')) {
+    if (name.startsWith('cc-')) {
       const ts = new Date().toISOString()
       appendLog(`[${ts}] appeared session=${JSON.stringify(name)}`)
     }

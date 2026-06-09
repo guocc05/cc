@@ -12,7 +12,7 @@ export interface RecapTurn {
 }
 
 /**
- * 过滤掉 im2cc 创建 session 时的 init 消息（"会话已建立"等）。
+ * 过滤掉 cc 创建 session 时的 init 消息（"会话已建立"等）。
  * 各 driver 的 buildRecapTurn 在解析完 turns 后统一调用。
  */
 export function filterInitTurns(turns: RecapTurn[]): RecapTurn[] {

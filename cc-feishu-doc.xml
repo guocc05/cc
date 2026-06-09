@@ -1,0 +1,104 @@
+﻿<title>cc 项目详解：原理、设计与使用指南</title>
+<callout emoji="💡" background-color="light-blue" border-color="blue">
+  <p><b>一句话</b>：cc 是一个本地守护进程，把飞书/微信消息桥接到你电脑上的 Claude Code、Codex、Gemini CLI，实现“离开电脑也能继续操控同一会话”。</p>
+</callout>
+<h1>1. 项目是什么</h1>
+<p>cc（原 im2cc）是一个本地运行的 AI 会话远程控制工具，核心目标是让开发者在手机端继续使用电脑上的 AI coding session，而不是新开一个远程副本。</p>
+<ul>
+  <li>同一 session 持续：手机接入、电脑接回都不丢上下文。</li>
+  <li>多会话并行：可按项目维度在 IM 里绑定不同会话。</li>
+  <li>本地执行：代码与执行都在你的电脑，IM 仅做消息传输。</li>
+</ul>
+<h1>2. 为什么这样设计</h1>
+<p>团队常见痛点：离开工位后任务中断、临时问题无法快速处理、跨端切换丢失上下文。cc 通过“守护进程 + IM 传输 + AI CLI 驱动”的解耦设计，解决这三个问题。</p>
+<table>
+  <thead><tr><th>痛点</th><th>cc 设计</th><th>收益</th></tr></thead>
+  <tbody>
+    <tr><td>手机无法直接用本地 AI 会话</td><td>TransportAdapter + ToolDriver 双抽象</td><td>飞书/微信与工具解耦，可扩展</td></tr>
+    <tr><td>跨端切换状态混乱</td><td>registry + bindings + inflight 持久化</td><td>会话身份稳定、可恢复</td></tr>
+    <tr><td>远程执行无进度反馈</td><td>turn 事件聚合 + 长任务状态提示</td><td>避免“卡住/无响应”误判</td></tr>
+  </tbody>
+</table>
+<h1>3. 核心架构与模块</h1>
+<h2>3.1 分层架构</h2>
+<ul>
+  <li><b>IM 层（TransportAdapter）</b>：负责接收/发送消息、下载附件（飞书、微信）。</li>
+  <li><b>工具层（ToolDriver）</b>：负责创建/恢复 session、发送消息、处理中断（Claude/Codex/Gemini）。</li>
+  <li><b>daemon 核心</b>：消息路由、队列串行化、状态持久化、安全控制。</li>
+</ul>
+<h2>3.2 关键数据文件（~/.cc）</h2>
+<ul>
+  <li><code>config.json</code>：凭证、白名单、默认模式配置。</li>
+  <li><code>data/registry.json</code>：会话注册表（会话身份权威）。</li>
+  <li><code>data/bindings.json</code>：IM 会话与 AI 会话绑定关系。</li>
+  <li><code>data/pending.json / inflight/</code>：待处理与执行中任务快照。</li>
+  <li><code>logs/daemon.log</code>：运行日志与故障排查入口。</li>
+</ul>
+<h1>4. 工作原理（端到端）</h1>
+<ol>
+  <li seq="auto">用户在飞书发送命令（如 <code>/fc work</code> 或普通问题）。</li>
+  <li seq="auto">cc daemon 轮询拉取消息，做去重、白名单校验、命令解析。</li>
+  <li seq="auto">按 binding 找到目标 session，通过对应 ToolDriver 调用本地 CLI。</li>
+  <li seq="auto">流式解析 AI 输出（assistant/result/tool 事件），聚合成可读回复。</li>
+  <li seq="auto">将结果回传飞书，并写入 inflight/completed 快照供恢复与审计。</li>
+</ol>
+<callout emoji="⚠️" background-color="light-yellow" border-color="yellow">
+  <p>远程执行依赖本机 AI CLI 权限模式。若模式需要人工确认（如 default），飞书无法代点本机弹窗，需改为 <code>/mode au</code> 或 <code>/mode bp</code>。</p>
+</callout>
+<h1>5. 安全模型（必须理解）</h1>
+<p>cc 的安全边界是“认证 + 授权”双层，不是路径白名单。</p>
+<ul>
+  <li><b>认证层</b>：IM 用户白名单（<code>cc secure</code>）决定谁能控制 Bot。</li>
+  <li><b>授权层</b>：AI 工具自身 permission mode 决定能做什么。</li>
+</ul>
+<table>
+  <thead><tr><th>模式</th><th>说明</th><th>建议场景</th></tr></thead>
+  <tbody>
+    <tr><td>default</td><td>需要确认，远程常被拒</td><td>纯问答/分析</td></tr>
+    <tr><td>auto (au)</td><td>自动执行且有护栏</td><td>日常远程操作（推荐）</td></tr>
+    <tr><td>bypassPermissions (bp)</td><td>跳过检查，风险最高</td><td>仅个人私有会话且明确可控时</td></tr>
+  </tbody>
+</table>
+<h1>6. 普通用户怎么用（最短路径）</h1>
+<h2>6.1 首次安装</h2>
+<pre lang="bash"><code>npm i -g cc
+cc onboard</code></pre>
+<p>按引导完成飞书凭证、机器人入群、首次会话创建。</p>
+<h2>6.2 每日操作</h2>
+<ul>
+  <li>电脑创建会话：<code>fn work .</code></li>
+  <li>飞书接入会话：<code>/fc work</code></li>
+  <li>查看会话列表：<code>/fl</code></li>
+  <li>切换模式：<code>/mode au</code></li>
+  <li>中断任务：<code>/stop</code></li>
+</ul>
+<h2>6.3 常见场景</h2>
+<ol>
+  <li seq="auto">通勤路上：飞书发“继续修复 xxx”，到工位后 <code>fc work</code> 接回。</li>
+  <li seq="auto">夜间定时：<code>/at 09:00 继续昨天任务</code>，自动触发。</li>
+  <li seq="auto">临时旁路讨论：<code>/btw 这个 SQL 还有更优方案吗</code>（只读，不污染主对话）。</li>
+</ol>
+<h1>7. 设计亮点</h1>
+<ul>
+  <li><b>接口化扩展</b>：新增渠道/工具只需实现适配接口。</li>
+  <li><b>状态可恢复</b>：inflight 快照 + 启动恢复，降低重启损失。</li>
+  <li><b>远程体验优化</b>：工具调用进度提示、消息去重、退避轮询降低 API 成本。</li>
+  <li><b>跨端一致性</b>：同会话单线程串行，避免多端并发冲突。</li>
+</ul>
+<h1>8. 运维与排障建议</h1>
+<ul>
+  <li><code>cc doctor</code>：检查环境与配置完整性。</li>
+  <li><code>cc logs</code>：查看 daemon 日志（首要排障入口）。</li>
+  <li><code>cc status</code>：确认 daemon 存活与绑定状态。</li>
+  <li>出现“无输出”：优先检查工具模式、CLI 可执行路径、driver 输出解析链路。</li>
+</ul>
+<h1>9. 给团队推广的落地建议</h1>
+<ol>
+  <li seq="auto">先在个人单聊或私有群验证链路，不要直接多人群上线。</li>
+  <li seq="auto">默认模式统一设为 <code>au</code>，减少远程确认阻塞。</li>
+  <li seq="auto">发布前统一执行 <code>cc secure</code>，严格控制白名单。</li>
+  <li seq="auto">约定标准命令集（/fc /fl /mode /stop /at）。</li>
+</ol>
+<callout emoji="✅" background-color="light-green" border-color="green">
+  <p>结论：cc 的本质是“本地 AI 能力远程化”，不是把 AI 搬到云端。它通过可扩展的双适配层和可恢复的状态机，把远程协作的稳定性与安全边界控制在用户本机。</p>
+</callout>

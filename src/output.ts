@@ -16,7 +16,7 @@ function resumeHint(sessionId: string, tool: ToolId): string {
     case 'gemini':
       return `回到电脑查看完整内容: gemini --resume ${sessionId}`
     default:
-      return '回到电脑查看完整内容: im2cc connect <会话名>'
+      return '回到电脑查看完整内容: cc connect <会话名>'
   }
 }
 

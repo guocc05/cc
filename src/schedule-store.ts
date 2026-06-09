@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/data/schedules.json, Schedule 数据结构
+ * @input:    ~/.cc/data/schedules.json, Schedule 数据结构
  * @output:   listSchedules(), getScheduleByName(), upsertSchedule(), removeScheduleByName(), updateNextFireAt() — 定时消息持久化（每 session 限一条，name 主键）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */

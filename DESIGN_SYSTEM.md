@@ -1,4 +1,4 @@
-# im2cc Design System
+# cc Design System
 
 > **维护者**：/designer。本文件由各 feature 的设计决策增量沉淀（见每个 feature 的 §Design 段）。
 > **首次创建**：2026-05-10，由 `@20260510-im-askuserquestion-bridge` bootstrap。
@@ -8,11 +8,11 @@
 
 ## 0. 项目 Surface
 
-im2cc 是 CLI + IM 双 surface 工具：
+cc 是 CLI + IM 双 surface 工具：
 
 | Surface | 触点 | 设计关注点 |
 |---|---|---|
-| **CLI** | 终端命令（fn / fc / fl / fk / fd / fs / im2cc subcommands） | 命令习惯、参数风格、help 文案、输出格式、错误信息 |
+| **CLI** | 终端命令（fn / fc / fl / fk / fd / fs / cc subcommands） | 命令习惯、参数风格、help 文案、输出格式、错误信息 |
 | **IM** | 飞书机器人 / 微信机器人 | 消息视觉语言、卡片设计、emoji prefix 体系、跨 transport 一致性 |
 
 每个 feature 的 `interface_surface` 字段决定它涉及哪些 surface，相关章节生效。
@@ -25,7 +25,7 @@ im2cc 是 CLI + IM 双 surface 工具：
 2. **跨 transport 信息架构一致**：同一信息在飞书卡片 / 微信文本 / 未来通道中，五要素必须一一对应（不少不多不换序）
 3. **降级路径明示**：当富表达降级为文本（如卡片失败 / 微信无卡片能力）时，用户必须能看出"这是降级态"
 4. **不打扰多于打扰**：用户没主动操作时，不主动 push 反馈消息（如微信不发"已收到"回执）
-5. **CLI 短名字优先**：高频操作命令一律单字符或两字符（fn / fc / fl 等），低频或破坏性操作命令用全词（im2cc secure / im2cc reset）
+5. **CLI 短名字优先**：高频操作命令一律单字符或两字符（fn / fc / fl 等），低频或破坏性操作命令用全词（cc secure / cc reset）
 
 ---
 
@@ -106,7 +106,7 @@ im2cc 是 CLI + IM 双 surface 工具：
 |---|---|---|
 | 高频会话操作 | **单字符或两字符短名** | `fn` (new) / `fc` (connect) / `fl` (list) / `fk` (kill) / `fd` (disconnect) / `fs` (status) |
 | IM 端控制命令 | **`/` 前缀** | `/mode` / `/stop` / `/at` / `/in` / `/cron` |
-| 管理操作 | **完整动词** | `im2cc start` / `im2cc stop` / `im2cc secure` / `im2cc reset` |
+| 管理操作 | **完整动词** | `cc start` / `cc stop` / `cc secure` / `cc reset` |
 | 工具切换 | **`fn-<tool>` 别名** | `fn-codex` / `fn-claude` / `fn-gemini` |
 
 **为什么**：高频操作单字符降低肌肉记忆负担；管理操作全词避免误触。

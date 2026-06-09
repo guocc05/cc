@@ -13,7 +13,7 @@ echo "[smoke] build"
 npm run build
 
 echo "[smoke] cli help"
-node dist/bin/im2cc.js >/dev/null
+node dist/bin/cc.js >/dev/null
 
 echo "[smoke] daemon lifecycle"
 node --test scripts/daemon-lifecycle.test.mjs

@@ -8,8 +8,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { execSync, execFileSync, spawn } from 'node:child_process'
-import { loadConfig, saveConfig, configExists, getPidFile, getDaemonLockDir, getLogDir, getConfigDir, loadWeChatAccount, saveWeChatAccount, getWeChatAccountFile, type Im2ccConfig } from '../src/config.js'
+import { execSync, execFileSync, spawn, spawnSync } from 'node:child_process'
+import { loadConfig, saveConfig, configExists, getPidFile, getDaemonLockDir, getLogDir, getConfigDir, loadWeChatAccount, saveWeChatAccount, getWeChatAccountFile, type CcConfig } from '../src/config.js'
 import { listActiveBindings, archiveBinding } from '../src/session.js'
 import { getClaudeVersion } from '../src/claude-driver.js'
 import { register, registerWithMeta, lookup, listRegistered, remove } from '../src/registry.js'
@@ -17,7 +17,7 @@ import { expandPath, validatePath, isValidSessionName } from '../src/security.js
 import { getDriver, hasDriver, type ToolId } from '../src/tool-driver.js'
 import { resumeCommand, toolCreateArgs, toolResumeArgs } from '../src/tool-cli-args.js'
 import { findSession, syncDriftedSession } from '../src/discover.js'
-import { DAEMON_LOCK_STARTUP_GRACE_MS, DAEMON_MARKER, daemonMainModulePath, isIm2ccDaemonProcess, killAllDaemonProcesses, listDaemonProcessPids, readDaemonPidRecord } from '../src/daemon-process.js'
+import { DAEMON_LOCK_STARTUP_GRACE_MS, DAEMON_MARKER, daemonMainModulePath, isCcDaemonProcess, killAllDaemonProcesses, listDaemonProcessPids, readDaemonPidRecord } from '../src/daemon-process.js'
 import { claudeSupportsSessionNameFlag } from '../src/tool-compat.js'
 import { renderLocalRegisteredSessionList, renderRegisteredSessionList, renderUnifiedHelp } from '../src/commands.js'
 import { detectInstallRoot, NPM_PACKAGE_NAME } from '../src/upgrade.js'
@@ -34,6 +34,7 @@ import '../src/codex-driver.js'
 import '../src/gemini-driver.js'
 
 const command = process.argv[2]
+let cachedTmuxAvailability: boolean | null = null
 
 type DaemonState =
   | { kind: 'running', pids: number[] }
@@ -44,7 +45,7 @@ type DaemonState =
 function inspectLocalDaemonState(): DaemonState {
   const daemonPidRecord = readDaemonPidRecord()
   if (daemonPidRecord.pid !== null) {
-    return isIm2ccDaemonProcess(daemonPidRecord.pid, daemonMainModulePath())
+    return isCcDaemonProcess(daemonPidRecord.pid, daemonMainModulePath())
       ? { kind: 'running', pids: [daemonPidRecord.pid] }
       : { kind: 'stale', pid: daemonPidRecord.pid }
   }
@@ -89,7 +90,8 @@ function validateSessionPathForAttach(cwd: string): { ok: true, resolvedPath: st
 
 function commandExists(commandName: string): boolean {
   try {
-    execFileSync('which', [commandName], { stdio: 'ignore' })
+    const locator = process.platform === 'win32' ? 'where' : 'which'
+    execFileSync(locator, [commandName], { stdio: 'ignore' })
     return true
   } catch {
     return false
@@ -103,8 +105,8 @@ function currentInstallRoot() {
 async function cmdUpdate(): Promise<void> {
   const installRoot = currentInstallRoot()
   if (!installRoot) {
-    console.log('❌ 无法定位 im2cc 安装目录。')
-    console.log('   推荐重新安装：npm i -g im2cc')
+    console.log('❌ 无法定位 cc 安装目录。')
+    console.log('   推荐重新安装：npm i -g cc')
     process.exit(1)
   }
 
@@ -117,17 +119,17 @@ async function cmdUpdate(): Promise<void> {
   }
 
   if (installRoot.mode === 'git-checkout') {
-    console.log('⚠️  当前是从源码 (git clone) 安装，不走 im2cc update。')
+    console.log('⚠️  当前是从源码 (git clone) 安装，不走 cc update。')
     console.log('')
     console.log(`开发者更新方式（在 ${installRoot.root} 内）：`)
     console.log('    git pull --ff-only')
     console.log('    npm install')
     console.log('    npm run build')
-    console.log('    im2cc stop && im2cc start')
+    console.log('    cc stop && cc start')
     console.log('')
     console.log('或改用 npm 分发版：')
     console.log(`    rm -rf ${installRoot.root}`)
-    console.log('    npm i -g im2cc')
+    console.log('    npm i -g cc')
     process.exit(1)
   }
 
@@ -135,12 +137,12 @@ async function cmdUpdate(): Promise<void> {
     console.log('⚠️  当前是历史的 tarball 安装模式（已弃用）。')
     console.log('   推荐迁移到 npm 安装：')
     console.log(`       rm -rf ${installRoot.root}`)
-    console.log('       npm i -g im2cc')
+    console.log('       npm i -g cc')
     process.exit(1)
   }
 
   console.log(`❌ 未识别的安装模式: ${installRoot.root}`)
-  console.log('   推荐重新安装：npm i -g im2cc')
+  console.log('   推荐重新安装：npm i -g cc')
   process.exit(1)
 }
 
@@ -170,7 +172,7 @@ async function updateViaNpm(shouldRestartDaemon: boolean): Promise<void> {
   }
 
   console.log('✅ 更新完成')
-  console.log('终端帮助: im2cc help（或重新打开终端后使用 fhelp）')
+  console.log('终端帮助: cc help（或重新打开终端后使用 fhelp）')
 }
 
 switch (command) {
@@ -202,9 +204,9 @@ switch (command) {
   case 'fqoff': cmdFqOff(); break
   case 'fqs': cmdFqStatus(); break
   default:
-    console.log(`im2cc — IM to AI coding tools
+    console.log(`cc — IM to AI coding tools
 
-用法: im2cc <command>
+用法: cc <command>
 
 正式支持:
   IM: 飞书 / 微信
@@ -217,7 +219,7 @@ switch (command) {
   list                              列出所有已注册对话
   show [名称]                       查看对话详情
   delete <名称>                     终止并删除对话
-  detach                            从当前 tmux 会话断开
+  detach                            断开当前本地会话（tmux 模式）
 
 守护进程:
   setup              配置飞书 App 凭证
@@ -237,7 +239,7 @@ switch (command) {
   sessions           列出活跃绑定
   install-shell      写入终端快捷命令（fn/fc/fl 等）
   install-hook       写入 Claude Code session 同步 hook
-  install-service    安装 macOS 开机自启
+  install-service    安装开机自启（当前仅 macOS）
   doctor             检查环境
   fqon               开启反茄钟
   fqoff              关闭反茄钟
@@ -267,8 +269,16 @@ function fcTraceLog(event: string, fields: Record<string, unknown>): void {
 
 // ─── tmux 辅助 ───────────────────────────────────────
 
+function tmuxAvailable(): boolean {
+  if (cachedTmuxAvailability === null) {
+    cachedTmuxAvailability = commandExists('tmux')
+  }
+  return cachedTmuxAvailability
+}
+
 /** 检查 tmux session 是否存在 */
 function tmuxSessionExists(name: string): boolean {
+  if (!tmuxAvailable()) return false
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(name)], { stdio: 'ignore' })
     return true
@@ -277,6 +287,7 @@ function tmuxSessionExists(name: string): boolean {
 
 /** 检测 tmux session 中实际运行的工具（通过进程名匹配） */
 function tmuxPaneTool(tmuxSession: string): ToolId | null {
+  if (!tmuxAvailable()) return null
   try {
     const pid = execFileSync('tmux', ['list-panes', '-t', tmuxExactTarget(tmuxSession), '-F', '#{pane_pid}'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] }).trim().split('\n')[0]
@@ -292,6 +303,10 @@ function tmuxPaneTool(tmuxSession: string): ToolId | null {
 
 /** 连接到 tmux session（在 tmux 内用 switch-client，否则用 attach） */
 function tmuxConnect(tmuxSession: string): void {
+  if (!tmuxAvailable()) {
+    console.log('当前环境未安装 tmux，无法附着本地窗口。')
+    return
+  }
   try {
     if (process.env.TMUX) {
       execFileSync('tmux', ['switch-client', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'inherit' })
@@ -311,18 +326,39 @@ function tmuxConnect(tmuxSession: string): void {
   }
 }
 
+function runInteractiveCommand(cmdArgs: string[], cwd: string): boolean {
+  if (!process.stdin.isTTY) {
+    const quoted = cmdArgs.map(arg => /\s/.test(arg) ? `"${arg}"` : arg).join(' ')
+    console.log('⚠️  当前环境不是交互终端（无 TTY），跳过自动接入。')
+    console.log(`   请在你本地 PowerShell 手动执行：`)
+    console.log(`   ${quoted}`)
+    return false
+  }
+  const result = spawnSync(cmdArgs[0], cmdArgs.slice(1), {
+    stdio: 'inherit',
+    cwd,
+    shell: process.platform === 'win32',
+  })
+  if (result.error) throw result.error
+  if ((result.status ?? 0) !== 0) {
+    throw new Error(`命令退出码 ${result.status ?? 'unknown'}`)
+  }
+  return true
+}
+
 /**
  * 查找属于指定 name + tool 的 tmux session。
  * Registry 是工具身份的唯一权威来源，tmux 命名只是进程管理标签。
  * 旧格式 session 需验证实际运行的工具是否匹配，不匹配则不接入。
  */
 function findTmuxSession(name: string, tool: string = 'claude'): string | null {
+  if (!tmuxAvailable()) return null
   // 新格式：名称已编码工具身份，直接匹配
-  const newName = `im2cc-${tool}-${name}`
+  const newName = `cc-${tool}-${name}`
   if (tmuxSessionExists(newName)) return newName
 
   // 旧格式：名称不含工具信息，需验证进程
-  const oldName = `im2cc-${name}`
+  const oldName = `cc-${name}`
   if (!tmuxSessionExists(oldName)) return null
 
   const actualTool = tmuxPaneTool(oldName)
@@ -338,6 +374,11 @@ function findTmuxSession(name: string, tool: string = 'claude'): string | null {
 
   // 工具不匹配或无法检测 → 不接入，让调用方重新创建正确的 session
   return null
+}
+
+function localSessionStatusLabel(name: string, tool?: string): string {
+  if (!tmuxAvailable()) return '⬤ 本地: 非 tmux 模式'
+  return findTmuxSession(name, tool) ? '🟢 本地: 活跃' : '⬤ 本地: 休眠'
 }
 
 // ─── 远程绑定解除 ───────────────────────────────────
@@ -586,7 +627,7 @@ async function runDesktopHandoffProtection(
 
 async function cmdStart(): Promise<void> {
   if (!configExists()) {
-    console.log('❌ 未配置。请先运行: im2cc setup')
+    console.log('❌ 未配置。请先运行: cc setup')
     process.exit(1)
   }
 
@@ -603,7 +644,7 @@ async function cmdStart(): Promise<void> {
     cleanupStaleDaemonState()
   }
 
-  console.log('启动 im2cc 守护进程...')
+  console.log('启动 cc 守护进程...')
 
   const mainModule = daemonMainModulePath()
   const child = spawn(process.execPath, [mainModule, DAEMON_MARKER], {
@@ -651,7 +692,7 @@ async function cmdStart(): Promise<void> {
 
   if (runningPids.length > 0) {
     console.log(`✅ 守护进程已启动 (PID: ${runningPids.join(', ')})`)
-    console.log(`   日志: im2cc logs`)
+    console.log(`   日志: cc logs`)
     return
   }
 
@@ -665,12 +706,12 @@ async function cmdStart(): Promise<void> {
       ? `signal ${childExitSignal}`
       : `exit code ${childExitCode ?? 0}`
     console.log(`❌ 守护进程启动失败 (${detail})`)
-    console.log('   请运行: im2cc logs')
+    console.log('   请运行: cc logs')
     process.exit(1)
   }
 
   console.log('⚠️ 启动命令已发出，但尚未确认守护进程就绪')
-  console.log('   请运行: im2cc status')
+  console.log('   请运行: cc status')
 }
 
 function cmdStop(): void {
@@ -768,7 +809,7 @@ function cmdSessions(): void {
 
 // ─── 对话管理命令 ────────────────────────────────────
 
-/** im2cc new [--tool <工具>] <名称> [路径] — 创建新对话并在 tmux 中打开 */
+/** cc new [--tool <工具>] <名称> [路径] — 创建新对话并在 tmux 中打开 */
 async function cmdNew(): Promise<void> {
   // 解析 --tool 参数
   let tool: ToolId = 'claude'
@@ -783,10 +824,10 @@ async function cmdNew(): Promise<void> {
   const pathArg = args[1]
 
   if (!name) {
-    console.log('用法: im2cc new [--tool claude|codex|gemini] <对话名称> [项目路径]')
-    console.log('例如: im2cc new auth-refactor ~/Code/im2cc')
-    console.log('      im2cc new --tool codex auth-refactor ~/Code/im2cc')
-    console.log('      im2cc new bugfix       (使用当前目录)')
+    console.log('用法: cc new [--tool claude|codex|gemini] <对话名称> [项目路径]')
+    console.log('例如: cc new auth-refactor ~/Code/cc')
+    console.log('      cc new --tool codex auth-refactor ~/Code/cc')
+    console.log('      cc new bugfix       (使用当前目录)')
     return
   }
 
@@ -805,7 +846,7 @@ async function cmdNew(): Promise<void> {
   // 检查名称是否已存在
   const existing = lookup(name)
   if (existing) {
-    console.log(`"${name}" 已存在。用 im2cc connect ${name} 打开，或换个名称。`)
+    console.log(`"${name}" 已存在。用 cc connect ${name} 打开，或换个名称。`)
     return
   }
 
@@ -845,12 +886,12 @@ async function cmdNew(): Promise<void> {
     registerWithMeta(name, sessionId, validation.resolvedPath, tool, { claudeProfile, permissionMode })
 
     // 在 tmux 中启动交互式工具
-    const tmuxSession = `im2cc-${tool}-${name}`
+    const tmuxSession = `cc-${tool}-${name}`
     // 清理可能残留的同名 tmux session
     if (tmuxSessionExists(tmuxSession)) {
       execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
     }
-    const oldTmux = `im2cc-${name}`
+    const oldTmux = `cc-${name}`
     if (tmuxSessionExists(oldTmux)) {
       execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(oldTmux)], { stdio: 'ignore' })
     }
@@ -869,9 +910,9 @@ async function cmdNew(): Promise<void> {
     } catch {
       // tmux 不可用，直接启动
       console.log(`✅ 已创建 "${name}"`)
-      console.log(`   打开: im2cc connect ${name}`)
+      console.log(`   打开: cc connect ${name}`)
       const tmuxArgs = toolResumeArgs(tool, sessionId, name, { claudeProfile, permissionMode })
-      execFileSync(tmuxArgs[0], tmuxArgs.slice(1), { stdio: 'inherit', cwd: validation.resolvedPath })
+      runInteractiveCommand(tmuxArgs, validation.resolvedPath)
     }
   } catch (err) {
     console.error(`❌ 创建失败: ${err instanceof Error ? err.message : String(err)}`)
@@ -879,7 +920,7 @@ async function cmdNew(): Promise<void> {
   }
 }
 
-/** im2cc connect [名称] [ID前缀] — 接入已有对话 */
+/** cc connect [名称] [ID前缀] — 接入已有对话 */
 async function cmdConnect(): Promise<void> {
   const target = process.argv[3]
   const idPrefix = process.argv[4]
@@ -888,7 +929,7 @@ async function cmdConnect(): Promise<void> {
   if (!target) {
     const all = listRegistered()
     if (all.length === 0) {
-      console.log('没有已注册的对话。用 im2cc new <名称> 创建。')
+      console.log('没有已注册的对话。用 cc new <名称> 创建。')
       return
     }
     if (all.length === 1) {
@@ -901,13 +942,12 @@ async function cmdConnect(): Promise<void> {
     console.log('已注册的对话:')
     console.log('─'.repeat(50))
     for (const s of all) {
-      const tmux = findTmuxSession(s.name, s.tool)
-      const status = tmux ? '🟢 活跃' : '⬤ 休眠'
+      const status = localSessionStatusLabel(s.name, s.tool)
       const toolTag = s.tool && s.tool !== 'claude' ? ` [${s.tool}]` : ''
       console.log(`  ${status}  ${s.name}  (${path.basename(s.cwd)})${toolTag}  [${s.sessionId.slice(0, 8)}]`)
     }
     console.log('─'.repeat(50))
-    console.log('\nim2cc connect <名称> 接入')
+    console.log('\ncc connect <名称> 接入')
     return
   }
 
@@ -957,7 +997,7 @@ async function cmdConnect(): Promise<void> {
         console.log(`✏️  已记住渠道: ${picked}（下次 connect 不再提示）`)
       }
     } catch (err) {
-      // launcher 不支持 --im2cc-select-profile 或其他原因 → 保持原行为，不写回
+      // launcher 不支持 --cc-select-profile 或其他原因 → 保持原行为，不写回
       console.log(`⚠️  补录渠道失败，本次保持老行为: ${err instanceof Error ? err.message : String(err)}`)
     }
   }
@@ -1012,8 +1052,8 @@ async function cmdConnect(): Promise<void> {
 
   // 查找已有 tmux session
   const tmux = findTmuxSession(session.name, tool)
-  const newFormatExists = tmuxSessionExists(`im2cc-${tool}-${session.name}`)
-  const oldFormatExists = tmuxSessionExists(`im2cc-${session.name}`)
+  const newFormatExists = tmuxSessionExists(`cc-${tool}-${session.name}`)
+  const oldFormatExists = tmuxSessionExists(`cc-${session.name}`)
   fcTraceLog('fc.find_tmux', {
     sessionName: session.name,
     tool,
@@ -1035,11 +1075,11 @@ async function cmdConnect(): Promise<void> {
   if (tool === 'claude' && status === 'elsewhere') {
     console.log(`❌ session ${session.sessionId.slice(0, 8)} 存在于错误的项目目录`)
     console.log(`   registry 中 cwd=${session.cwd} 与 session 文件位置不匹配`)
-    console.log(`   请 im2cc delete ${session.name} 后重新 im2cc new`)
+    console.log(`   请 cc delete ${session.name} 后重新 cc new`)
     return
   }
 
-  const tmuxSession = `im2cc-${tool}-${session.name}`
+  const tmuxSession = `cc-${tool}-${session.name}`
   // 从 registry 读 permissionMode；保持 mode 一致（IM 端切过的 mode 在电脑端也生效）
   const permissionMode = session.permissionMode
   const cmdArgs = status === 'here'
@@ -1073,7 +1113,7 @@ async function cmdConnect(): Promise<void> {
       stderr: (err as { stderr?: Buffer })?.stderr?.toString().slice(0, 500) ?? null,
     })
     // tmux 不可用，直接启动
-    execFileSync(cmdArgs[0], cmdArgs.slice(1), { stdio: 'inherit', cwd: session.cwd })
+    runInteractiveCommand(cmdArgs, session.cwd)
   }
 }
 
@@ -1088,7 +1128,7 @@ async function cmdConnectDoubleArg(newName: string, query: string): Promise<void
   // 检查名称是否已注册
   const existing = lookup(newName)
   if (existing) {
-    console.log(`"${newName}" 已注册。用 im2cc connect ${newName} 直接接入。`)
+    console.log(`"${newName}" 已注册。用 cc connect ${newName} 直接接入。`)
     return
   }
 
@@ -1154,7 +1194,7 @@ async function cmdConnectDoubleArg(newName: string, query: string): Promise<void
   await releaseRemoteBinding(sessionId, newName)
 
   // 创建 tmux session
-  const tmuxSession = `im2cc-claude-${newName}`
+  const tmuxSession = `cc-claude-${newName}`
   const cmdArgs = fileStatus === 'here'
     ? toolResumeArgs('claude', sessionId, newName, { permissionMode })
     : toolCreateArgs('claude', sessionId, newName, { permissionMode })
@@ -1166,29 +1206,29 @@ async function cmdConnectDoubleArg(newName: string, query: string): Promise<void
     ])
     tmuxConnect(tmuxSession)
   } catch {
-    execFileSync(cmdArgs[0], cmdArgs.slice(1), { stdio: 'inherit', cwd })
+    runInteractiveCommand(cmdArgs, cwd)
   }
 }
 
-/** im2cc list — 列出所有已注册对话（按飞书/微信/电脑位置聚合） */
+/** cc list — 列出所有已注册对话（按飞书/微信/电脑位置聚合） */
 function cmdList(): void {
   const all = listRegistered()
   if (all.length === 0) {
-    console.log('没有已注册的对话。用 im2cc new <名称> 创建。')
+    console.log('没有已注册的对话。用 cc new <名称> 创建。')
     return
   }
 
   console.log(renderLocalRegisteredSessionList(all, {
     activeBindings: listActiveBindings(),
-    hasLocalWindow: (session) => Boolean(findTmuxSession(session.name, session.tool)),
+    hasLocalWindow: (session) => tmuxAvailable() && Boolean(findTmuxSession(session.name, session.tool)),
   }))
 }
 
-/** im2cc delete <名称> — 终止 tmux session 并从注册表删除 */
+/** cc delete <名称> — 终止本地会话并从注册表删除 */
 function cmdDelete(): void {
   const name = process.argv[3]
   if (!name) {
-    console.log('用法: im2cc delete <名称>')
+    console.log('用法: cc delete <名称>')
     return
   }
 
@@ -1198,22 +1238,28 @@ function cmdDelete(): void {
     return
   }
 
-  // Kill tmux — 显式删除时清理所有格式的 tmux session，不依赖工具验证
-  for (const tmuxName of [`im2cc-${session.tool ?? 'claude'}-${session.name}`, `im2cc-${session.name}`]) {
+  // Kill tmux（可用时）— 显式删除时清理所有格式的 tmux session，不依赖工具验证
+  let killedLocalSession = false
+  for (const tmuxName of [`cc-${session.tool ?? 'claude'}-${session.name}`, `cc-${session.name}`]) {
     try {
       execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxName)], { stdio: 'ignore' })
       execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxName)], { stdio: 'ignore' })
-      console.log('✅ 已终止 tmux 会话')
+      killedLocalSession = true
     } catch { /* 不存在 */ }
   }
+  if (killedLocalSession) console.log('✅ 已终止本地会话')
 
   remove(session.name)
   console.log(`✅ 已删除 "${session.name}"`)
   console.log(`   如需恢复: ${resumeCommand((session.tool ?? 'claude') as ToolId, session.sessionId)}`)
 }
 
-/** im2cc detach — 从当前 tmux 会话断开 */
+/** cc detach — 从当前 tmux 会话断开 */
 function cmdDetach(): void {
+  if (!tmuxAvailable()) {
+    console.log('当前环境未安装 tmux，detach 仅在 tmux 模式下可用。')
+    return
+  }
   try {
     execFileSync('tmux', ['detach-client'], { stdio: 'inherit' })
   } catch {
@@ -1221,7 +1267,7 @@ function cmdDetach(): void {
   }
 }
 
-/** im2cc show [名称] — 查看对话详情 */
+/** cc show [名称] — 查看对话详情 */
 function cmdShow(): void {
   const name = process.argv[3]
   if (!name) {
@@ -1241,11 +1287,11 @@ function cmdShow(): void {
   console.log(`📊 ${session.name}${toolTag}`)
   console.log(`  📁 ${path.basename(session.cwd)} (${session.cwd})`)
   console.log(`  🔑 ${session.sessionId}`)
-  console.log(`  ${tmux ? '🟢 tmux: 活跃' : '⬤ tmux: 休眠'}`)
+  console.log(`  ${tmuxAvailable() ? (tmux ? '🟢 本地: 活跃' : '⬤ 本地: 休眠') : '⬤ 本地: 非 tmux 模式'}`)
   console.log('')
-  console.log(`  打开: im2cc connect ${session.name}`)
+  console.log(`  打开: cc connect ${session.name}`)
   console.log(`  飞书/微信: /fc ${session.name}`)
-  console.log(`  终止: im2cc delete ${session.name}`)
+  console.log(`  终止: cc delete ${session.name}`)
 }
 
 // ─── 配置/运维命令 ───────────────────────────────────
@@ -1253,7 +1299,7 @@ function cmdShow(): void {
 type LaunchAgentState = 'missing' | 'installed' | 'loaded' | 'unsupported'
 
 interface RuntimeSnapshot {
-  config: Im2ccConfig
+  config: CcConfig
   wechatBound: boolean
   claudeInstalled: boolean
   codexInstalled: boolean
@@ -1284,13 +1330,13 @@ function splitCsvList(value: string): string[] {
 function detectLaunchAgentState(): LaunchAgentState {
   if (process.platform !== 'darwin') return 'unsupported'
 
-  const plistFile = path.join(os.homedir(), 'Library/LaunchAgents', 'com.im2cc.daemon.plist')
+  const plistFile = path.join(os.homedir(), 'Library/LaunchAgents', 'com.cc.daemon.plist')
   if (!fs.existsSync(plistFile)) return 'missing'
 
   const uid = typeof process.getuid === 'function' ? process.getuid() : null
   if (uid !== null) {
     try {
-      execFileSync('launchctl', ['print', `gui/${uid}/com.im2cc.daemon`], { stdio: 'ignore' })
+      execFileSync('launchctl', ['print', `gui/${uid}/com.cc.daemon`], { stdio: 'ignore' })
       return 'loaded'
     } catch {}
   }
@@ -1321,7 +1367,7 @@ function preferredFirstSessionCommand(snapshot: RuntimeSnapshot): string {
   return 'fn --tool gemini demo'
 }
 
-function needsSecurityReview(config: Im2ccConfig): boolean {
+function needsSecurityReview(config: CcConfig): boolean {
   return config.allowedUserIds.length === 0
 }
 
@@ -1331,13 +1377,13 @@ function nextActionLines(snapshot: RuntimeSnapshot): string[] {
   const daemonRunning = snapshot.daemonState.kind === 'running'
 
   if (!hasCoreTool) {
-    return ['先安装并登录 Claude Code 或 Codex，然后重新运行 im2cc onboard']
+    return ['先安装并登录 Claude Code 或 Codex，然后重新运行 cc onboard']
   }
   if (!hasIm) {
-    return ['先选一个 IM：飞书运行 im2cc setup；微信运行 im2cc wechat login']
+    return ['先选一个 IM：飞书运行 cc setup；微信运行 cc wechat login']
   }
   if (!daemonRunning) {
-    return ['运行 im2cc start']
+    return ['运行 cc start']
   }
   if (snapshot.registeredCount === 0) {
     return [`先进入你的项目目录后运行 ${preferredFirstSessionCommand(snapshot)}`]
@@ -1348,13 +1394,13 @@ function nextActionLines(snapshot: RuntimeSnapshot): string[] {
 
   const actions: string[] = []
   if (snapshot.launchAgentState === 'missing' || snapshot.launchAgentState === 'installed') {
-    actions.push('运行 im2cc install-service，并按提示加载 LaunchAgent')
+    actions.push('运行 cc install-service，并按提示加载 LaunchAgent')
   }
   if (needsSecurityReview(snapshot.config)) {
-    actions.push('运行 im2cc secure，配置允许使用 IM Bot 的用户白名单')
+    actions.push('运行 cc secure，配置允许使用 IM Bot 的用户白名单')
   }
   if (actions.length > 0) return actions
-  return ['已经完成首次成功并做过基础加固；后续高频命令见 im2cc help']
+  return ['已经完成首次成功并做过基础加固；后续高频命令见 cc help']
 }
 
 function cmdOnboard(): void {
@@ -1365,7 +1411,7 @@ function cmdOnboard(): void {
   const hasMobileAttach = daemonRunning && snapshot.bindingCount > 0
   const firstSuccessDone = hasCoreTool && hasIm && daemonRunning && snapshot.registeredCount > 0 && hasMobileAttach
 
-  console.log('im2cc onboarding')
+  console.log('cc onboarding')
   console.log('─'.repeat(40))
   console.log('Phase 1: First Success')
   console.log(`  ${hasCoreTool ? '✅' : '⬤'} 正式支持工具: Claude Code / Codex`)
@@ -1390,14 +1436,14 @@ function cmdOnboard(): void {
   }
   console.log('')
   console.log('更多命令:')
-  console.log('  - im2cc doctor  # 检查状态并获取下一步建议')
-  console.log('  - im2cc help    # 查看高频命令')
+  console.log('  - cc doctor  # 检查状态并获取下一步建议')
+  console.log('  - cc help    # 查看高频命令')
 }
 
 async function cmdSetup(): Promise<void> {
   const prompt = createPrompt()
 
-  console.log('im2cc 配置向导')
+  console.log('cc 配置向导')
   console.log('─'.repeat(40))
   console.log('请在飞书开放平台创建一个自建应用，获取 App ID 和 App Secret')
   console.log('开放平台: https://open.feishu.cn/app\n')
@@ -1413,7 +1459,7 @@ async function cmdSetup(): Promise<void> {
   console.log(`\n✅ 配置已保存到 ${getConfigDir()}/config.json`)
   console.log('\n下一步:')
   console.log('  1. 把飞书 Bot 加入一个群，并确保权限已发布')
-  console.log('  2. 运行 im2cc onboard')
+  console.log('  2. 运行 cc onboard')
   console.log('  3. 按 onboard 提示完成首次成功、开机自启和安全加固')
 }
 
@@ -1421,7 +1467,7 @@ async function cmdSecure(): Promise<void> {
   const prompt = createPrompt()
   const config = loadConfig()
 
-  console.log('im2cc 安全加固')
+  console.log('cc 安全加固')
   console.log('─'.repeat(40))
   console.log('建议在完成第一次真实对话流转后立刻做这一步。')
   console.log('')
@@ -1439,9 +1485,9 @@ async function cmdSecure(): Promise<void> {
   saveConfig(config)
   console.log('\n✅ 安全配置已保存')
   console.log(`用户白名单: ${config.allowedUserIds.length > 0 ? config.allowedUserIds.join(', ') : '所有人可用'}`)
-  console.log('提示：im2cc 的安全边界是 IM 端的用户白名单 + AI 工具自身的 permission mode，')
+  console.log('提示：cc 的安全边界是 IM 端的用户白名单 + AI 工具自身的 permission mode，')
   console.log('      不依赖路径限制（AI 启动后可访问任何绝对路径）。请谨慎使用 YOLO/bypass。')
-  console.log('建议再运行一次 im2cc doctor 确认当前状态。')
+  console.log('建议再运行一次 cc doctor 确认当前状态。')
 }
 
 function candidateShellRcFiles(): string[] {
@@ -1457,7 +1503,51 @@ function candidateShellRcFiles(): string[] {
   return candidates
 }
 
+function writePowerShellHelpersToProfile(profilePath: string): 'created' | 'updated' | 'unchanged' {
+  const markerStart = '# >>> cc shell helpers >>>'
+  const markerEnd = '# <<< cc shell helpers <<<'
+  const functionsBlock = [
+    'function fn { cc new @args }',
+    'function fn-codex { cc new --tool codex @args }',
+    'function fn-gemini { cc new --tool gemini @args }',
+    'function fhelp { cc help }',
+    'function fc { cc connect @args }',
+    'function fl { cc list }',
+    'function fk { cc delete @args }',
+    'function fd { cc detach }',
+    'function fs { cc show @args }',
+    'function fqon { cc fqon @args }',
+    'function fqoff { cc fqoff @args }',
+    'function fqs { cc fqs @args }',
+  ].join('\n')
+  const block = [markerStart, functionsBlock, markerEnd].join('\n')
+  const existing = fs.existsSync(profilePath) ? fs.readFileSync(profilePath, 'utf-8') : ''
+  const blockRegex = new RegExp(`${markerStart}[\\s\\S]*?${markerEnd}\\n?`, 'g')
+  const content = blockRegex.test(existing)
+    ? existing.replace(blockRegex, block + '\n')
+    : (existing.trimEnd() ? `${existing.trimEnd()}\n\n${block}\n` : `${block}\n`)
+  if (content === existing) return 'unchanged'
+  fs.mkdirSync(path.dirname(profilePath), { recursive: true })
+  fs.writeFileSync(profilePath, content)
+  return existing ? 'updated' : 'created'
+}
+
 function cmdInstallShell(): void {
+  if (process.platform === 'win32') {
+    const docsDir = path.join(os.homedir(), 'Documents')
+    const profilePath = path.join(docsDir, 'PowerShell', 'Microsoft.PowerShell_profile.ps1')
+    const result = writePowerShellHelpersToProfile(profilePath)
+    if (result === 'unchanged') {
+      console.log(`✅ ${profilePath}: 已是最新，无需改动`)
+    } else {
+      console.log(`✅ ${profilePath}: 已${result === 'created' ? '创建' : '更新'}`)
+    }
+    console.log('')
+    console.log('请重开 PowerShell，或执行以下命令立即生效：')
+    console.log(`  . "${profilePath}"`)
+    return
+  }
+
   const rcFiles = candidateShellRcFiles()
 
   if (rcFiles.length === 0) {
@@ -1483,17 +1573,25 @@ function cmdInstallShell(): void {
 }
 
 function resolvePackagedHookScript(): string {
-  return path.resolve(import.meta.dirname, '../../shell/im2cc-session-sync.sh')
+  return path.resolve(import.meta.dirname, '../../shell/cc-session-sync.sh')
+}
+
+function resolvePackagedHookScriptWin(): string {
+  return path.resolve(import.meta.dirname, '../../hooks/cc-session-sync.mjs')
 }
 
 function cmdInstallHook(): void {
-  const hookScript = resolvePackagedHookScript()
+  const hookScript = process.platform === 'win32' ? resolvePackagedHookScriptWin() : resolvePackagedHookScript()
   if (!fs.existsSync(hookScript)) {
     console.log(`❌ 找不到 session-sync hook 脚本: ${hookScript}`)
-    console.log('   这通常意味着 im2cc 安装不完整，建议重新运行 npm i -g im2cc')
+    console.log('   这通常意味着 cc 安装不完整，建议重新运行 npm i -g cc')
     process.exit(1)
   }
   try { fs.chmodSync(hookScript, 0o755) } catch {}
+
+  const hookCommand = process.platform === 'win32'
+    ? `& "${process.execPath}" "${hookScript}"`
+    : hookScript
 
   const settingsPath = path.join(os.homedir(), '.claude/settings.json')
   const settingsDir = path.dirname(settingsPath)
@@ -1519,34 +1617,41 @@ function cmdInstallHook(): void {
   let found = false
   for (const entry of sessionHooks) {
     if (entry && Array.isArray(entry.hooks)) {
-      const im2ccInner = entry.hooks.some(h => typeof h?.command === 'string' && h.command.includes('im2cc-session-sync'))
-      if (im2ccInner) {
-        rebuilt.push({ matcher: entry.matcher ?? '', hooks: [{ type: 'command', command: hookScript }] })
+      const ccInner = entry.hooks.some(h => typeof h?.command === 'string' && h.command.includes('cc-session-sync'))
+      if (ccInner) {
+        rebuilt.push({ matcher: entry.matcher ?? '', hooks: [{ type: 'command', command: hookCommand }] })
         found = true
         continue
       }
     }
-    if (entry && entry.type === 'command' && typeof entry.command === 'string' && entry.command.includes('im2cc-session-sync')) {
-      rebuilt.push({ matcher: '', hooks: [{ type: 'command', command: hookScript }] })
+    if (entry && entry.type === 'command' && typeof entry.command === 'string' && entry.command.includes('cc-session-sync')) {
+      rebuilt.push({ matcher: '', hooks: [{ type: 'command', command: hookCommand }] })
       found = true
       continue
     }
     rebuilt.push(entry)
   }
   if (!found) {
-    rebuilt.push({ matcher: '', hooks: [{ type: 'command', command: hookScript }] })
+    rebuilt.push({ matcher: '', hooks: [{ type: 'command', command: hookCommand }] })
   }
   settings.hooks.SessionStart = rebuilt
 
   fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2))
   console.log(`✅ Claude session-sync hook 已配置`)
   console.log(`   hook 脚本: ${hookScript}`)
+  console.log(`   hook 命令: ${hookCommand}`)
   console.log(`   settings : ${settingsPath}`)
 }
 
 function cmdInstallService(): void {
+  if (process.platform !== 'darwin') {
+    console.log('⚠️  install-service 目前仅支持 macOS LaunchAgent。')
+    console.log('   Windows 请改用任务计划程序，或手动在开机时执行 cc start。')
+    return
+  }
+
   const plistDir = path.join(os.homedir(), 'Library/LaunchAgents')
-  const plistFile = path.join(plistDir, 'com.im2cc.daemon.plist')
+  const plistFile = path.join(plistDir, 'com.cc.daemon.plist')
 
   // 直接运行 daemon 入口（避免 CLI start 的 double-fork）
   const mainModule = path.resolve(import.meta.dirname, '../src/index.js')
@@ -1563,7 +1668,7 @@ function cmdInstallService(): void {
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>com.im2cc.daemon</string>
+  <string>com.cc.daemon</string>
   <key>ProgramArguments</key>
   <array>
     <string>${nodePath}</string>
@@ -1592,14 +1697,14 @@ function cmdInstallService(): void {
   console.log('   加载: launchctl load ' + plistFile)
   console.log('   卸载: launchctl unload ' + plistFile)
   console.log('')
-  console.log('   如果将来切换了安装模式（npm ↔ git clone），请重新运行 im2cc install-service')
+  console.log('   如果将来切换了安装模式（npm ↔ git clone），请重新运行 cc install-service')
 }
 
 function cmdDoctor(): void {
   const snapshot = collectRuntimeSnapshot()
   const config = snapshot.config
 
-  console.log('im2cc 环境检查')
+  console.log('cc 环境检查')
   console.log('─'.repeat(40))
 
   // AI 编程工具
@@ -1609,15 +1714,14 @@ function cmdDoctor(): void {
     console.log(`Claude 会话显示名: ${claudeSupportsSessionNameFlag() ? '✅ 支持 --name' : '⚠️ 当前版本不支持 --name，已自动降级'}`)
   }
   for (const tool of ['codex', 'gemini']) {
-    try {
-      execFileSync('which', [tool], { stdio: 'ignore' })
+    if (commandExists(tool)) {
       try {
         const ver = execFileSync(tool, ['--version'], { encoding: 'utf-8', timeout: 5000 }).trim()
         console.log(`${tool}: ✅ ${ver}`)
       } catch {
         console.log(`${tool}: ✅ 已安装（版本未知）`)
       }
-    } catch {
+    } else {
       console.log(`${tool}: ⬤ 未安装`)
     }
   }
@@ -1626,7 +1730,7 @@ function cmdDoctor(): void {
   console.log(`Node.js: ✅ ${process.version}`)
 
   // 配置
-  console.log(`配置文件: ${configExists() ? '✅ 已配置' : '❌ 未配置 (运行 im2cc setup)'}`)
+  console.log(`配置文件: ${configExists() ? '✅ 已配置' : '❌ 未配置 (运行 cc setup)'}`)
   console.log(`飞书 App ID: ${config.feishu.appId ? '✅ ****' + config.feishu.appId.slice(-4) : '⬤ 未设置'}`)
   console.log(`用户白名单: ${config.allowedUserIds.length > 0 ? '✅ ' + config.allowedUserIds.length + ' 人' : '⚠️ 未设置 (所有人可用)'}`)
 
@@ -1648,12 +1752,12 @@ function cmdDoctor(): void {
   }
   const otherDaemonPids = listDaemonProcessPids(daemonMainModulePath()).filter(pid => daemonState.kind !== 'running' || !daemonState.pids.includes(pid))
   if (otherDaemonPids.length > 0) {
-    console.log(`其他 im2cc 守护进程: ⚠️ ${otherDaemonPids.join(', ')} (系统内其他实例)`)
+    console.log(`其他 cc 守护进程: ⚠️ ${otherDaemonPids.join(', ')} (系统内其他实例)`)
   }
 
   // 开机自启动（macOS）
   if (snapshot.launchAgentState === 'missing') {
-    console.log('开机自启动: ⬤ 未安装 (运行 im2cc install-service)')
+    console.log('开机自启动: ⬤ 未安装 (运行 cc install-service)')
   } else if (snapshot.launchAgentState === 'installed') {
     console.log('开机自启动: ⚠️ 已安装但未加载')
   } else if (snapshot.launchAgentState === 'loaded') {
@@ -1661,13 +1765,13 @@ function cmdDoctor(): void {
   }
 
   // 微信
-  console.log(`微信 ClawBot: ${snapshot.wechatBound ? '✅ 已绑定' : '⬤ 未绑定 (im2cc wechat login)'}`)
+  console.log(`微信 ClawBot: ${snapshot.wechatBound ? '✅ 已绑定' : '⬤ 未绑定 (cc wechat login)'}`)
 
   console.log('\n下一步建议:')
   for (const line of nextActionLines(snapshot)) {
     console.log(`  - ${line}`)
   }
-  console.log('  - 需要完整引导时运行 im2cc onboard')
+  console.log('  - 需要完整引导时运行 cc onboard')
 }
 
 async function cmdWeChat(): Promise<void> {
@@ -1701,7 +1805,7 @@ async function cmdWeChat(): Promise<void> {
         })
         console.log(`\n✅ 微信 ClawBot 已绑定`)
         console.log(`   Bot ID: ${result.ilinkBotId}`)
-        console.log(`   重启守护进程生效: im2cc stop && im2cc start`)
+        console.log(`   重启守护进程生效: cc stop && cc start`)
         return
       }
       // pollQRCodeStatus 自身有超时，无需额外 sleep
@@ -1714,7 +1818,7 @@ async function cmdWeChat(): Promise<void> {
     const account = loadWeChatAccount()
     if (!account?.botToken) {
       console.log('微信 ClawBot: 未绑定')
-      console.log('运行 im2cc wechat login 绑定')
+      console.log('运行 cc wechat login 绑定')
       return
     }
     console.log('微信 ClawBot:')
@@ -1731,7 +1835,7 @@ async function cmdWeChat(): Promise<void> {
     if (fs.existsSync(accountFile)) {
       fs.unlinkSync(accountFile)
       console.log('✅ 已解除微信 ClawBot 绑定')
-      console.log('   重启守护进程生效: im2cc stop && im2cc start')
+      console.log('   重启守护进程生效: cc stop && cc start')
     } else {
       console.log('微信 ClawBot 未绑定')
     }
@@ -1740,7 +1844,7 @@ async function cmdWeChat(): Promise<void> {
 
   console.log(`微信 ClawBot 管理
 
-用法: im2cc wechat <command>
+用法: cc wechat <command>
 
   login    扫码绑定微信 ClawBot
   status   查看连接状态

@@ -341,7 +341,7 @@ function syncDriftedCodexSession(
 }
 
 function detectCodexThreadFromTmuxPane(name: string, cwd: string): string | null {
-  const tmuxSession = `im2cc-codex-${name}`
+  const tmuxSession = `cc-codex-${name}`
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
   } catch {

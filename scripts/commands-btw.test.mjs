@@ -11,7 +11,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-btw-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-btw-'))
 process.env.HOME = testHome
 
 const commands = await import(path.join(rootDir, 'dist', 'src', 'commands.js'))
@@ -27,7 +27,7 @@ await import(path.join(rootDir, 'dist', 'src', 'codex-driver.js'))
 await import(path.join(rootDir, 'dist', 'src', 'gemini-driver.js'))
 
 function resetState() {
-  fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
+  fs.rmSync(path.join(testHome, '.cc'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, 'Code'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, '.claude'), { recursive: true, force: true })
 }

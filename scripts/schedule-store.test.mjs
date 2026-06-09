@@ -7,10 +7,10 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-// 隔离 ~/.im2cc：每次测试用独立 HOME
-const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-store-test-'))
+// 隔离 ~/.cc：每次测试用独立 HOME
+const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-store-test-'))
 process.env.HOME = tmpHome
-fs.mkdirSync(path.join(tmpHome, '.im2cc', 'data'), { recursive: true })
+fs.mkdirSync(path.join(tmpHome, '.cc', 'data'), { recursive: true })
 
 const store = await import(path.join(rootDir, 'dist', 'src', 'schedule-store.js'))
 
@@ -83,7 +83,7 @@ test('updateAfterFire bumps nextFireAt + sets lastFiredAt', () => {
 
 test('corrupt file falls back to empty', () => {
   // Corrupt the JSON file
-  const file = path.join(tmpHome, '.im2cc', 'data', 'schedules.json')
+  const file = path.join(tmpHome, '.cc', 'data', 'schedules.json')
   fs.writeFileSync(file, 'not json garbage')
   const all = store.listSchedules()
   assert.deepEqual(all, [])

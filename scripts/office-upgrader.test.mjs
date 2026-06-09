@@ -7,7 +7,7 @@ import path from 'node:path'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-office-upgrader-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-office-upgrader-'))
 process.env.HOME = testHome
 
 const upgrader = await import(path.join(rootDir, 'dist', 'src', 'office-upgrader.js'))
@@ -68,7 +68,7 @@ test('classifyFile keeps unsupported semantics for empty / unknown extensionless
 
 test('upgradeOfficeLegacy returns failure when source missing', async () => {
   upgrader._resetUpgraderChainForTest()
-  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-upgrade-test-'))
+  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-upgrade-test-'))
   try {
     const result = await upgrader.upgradeOfficeLegacy(
       '/nonexistent/file.doc',
@@ -89,7 +89,7 @@ test('upgradeOfficeLegacy returns failure when source missing', async () => {
 
 test('upgradeOfficeLegacy serializes concurrent calls', async () => {
   upgrader._resetUpgraderChainForTest()
-  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-upgrade-test-'))
+  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-upgrade-test-'))
   try {
     // 并发触发 3 个；mutex 应保证它们一个接一个 settle
     const results = await Promise.all([
@@ -108,7 +108,7 @@ test('upgradeOfficeLegacy serializes concurrent calls', async () => {
 // E2E：仅当机器装了 soffice 时跑（用户机器可能未装；CI/dev 双场景兼容）
 test('upgradeOfficeLegacy successfully upgrades real .doc → .docx (skipped if soffice missing)', { skip: upgrader._resolveSofficeForTest() === null ? 'soffice not installed' : undefined }, async () => {
   upgrader._resetUpgraderChainForTest()
-  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-upgrade-test-'))
+  const tmpOut = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-upgrade-test-'))
   try {
     // 先用 soffice 自己生成一个 .doc 作为 fixture
     // 使用一个最小 .docx 通过 soffice 转回 .doc，再测升格回 .docx

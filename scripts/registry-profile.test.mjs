@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
 function setupTempHome() {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-registry-profile-'))
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-registry-profile-'))
   const originalHome = process.env.HOME
   process.env.HOME = tempHome
   return { tempHome, restore: () => { process.env.HOME = originalHome } }

@@ -197,7 +197,7 @@ async function fetchClaudeQuota(): Promise<QuotaInfo | null> {
   if (!token) return null
   try {
     const resp = await fetch('https://api.anthropic.com/api/oauth/usage', {
-      headers: { 'Authorization': `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'im2cc/1.0' },
+      headers: { 'Authorization': `Bearer ${token}`, 'anthropic-beta': 'oauth-2025-04-20', 'User-Agent': 'cc/1.0' },
       signal: AbortSignal.timeout(8000),
     })
     if (!resp.ok) return null
@@ -218,12 +218,28 @@ function findCodexSessionFile(threadId: string): string | null {
   const sessDir = path.join(os.homedir(), '.codex', 'sessions')
   if (!fs.existsSync(sessDir)) return null
   try {
-    // 递归搜索包含 threadId 的文件
-    const result = execFileSync('find', [sessDir, '-name', `*${threadId}*`, '-type', 'f'],
-      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'], timeout: 3000 }).trim()
-    const files = result.split('\n').filter(Boolean)
+    const stack = [sessDir]
+    const matches: string[] = []
+    while (stack.length > 0) {
+      const current = stack.pop()!
+      let entries: fs.Dirent[] = []
+      try {
+        entries = fs.readdirSync(current, { withFileTypes: true })
+      } catch {
+        continue
+      }
+      for (const entry of entries) {
+        const fullPath = path.join(current, entry.name)
+        if (entry.isDirectory()) {
+          stack.push(fullPath)
+          continue
+        }
+        if (!entry.isFile()) continue
+        if (entry.name.includes(threadId)) matches.push(fullPath)
+      }
+    }
     // 多个 rollout 文件时取最新的
-    return files.length > 0 ? files.sort().pop()! : null
+    return matches.length > 0 ? matches.sort().pop()! : null
   } catch { return null }
 }
 

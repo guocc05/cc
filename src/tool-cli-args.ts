@@ -13,7 +13,7 @@ interface ToolCliArgsOptions {
   claudeProfile?: string
   /**
    * 权限模式。传入则按 mode 派生 CLI flag；
-   * 省略时保留历史默认 `--dangerously-skip-permissions`（向后兼容本地 im2cc new/connect 默认行为）。
+   * 省略时保留历史默认 `--dangerously-skip-permissions`（向后兼容本地 cc new/connect 默认行为）。
    */
   permissionMode?: string
 }

@@ -8,7 +8,7 @@ const messageFormat = await import(path.join(rootDir, 'dist', 'src', 'message-fo
 
 test('structureSystemReply converts multi-section system text into panel message', () => {
   const reply = [
-    '📖 im2cc 帮助',
+    '📖 cc 帮助',
     '',
     '首次使用：先在电脑终端运行 fn <名称> 创建第一个对话，再回到飞书发送 /fc <名称> 接入。',
     '',
@@ -22,7 +22,7 @@ test('structureSystemReply converts multi-section system text into panel message
 
   const structured = messageFormat.structureSystemReply(reply)
   assert.equal(structured.kind, 'panel')
-  assert.equal(structured.title, '📖 im2cc 帮助')
+  assert.equal(structured.title, '📖 cc 帮助')
   assert.equal(structured.sections[0].title, undefined)
   assert.deepEqual(structured.sections[0].lines, [
     '首次使用：先在电脑终端运行 fn <名称> 创建第一个对话，再回到飞书发送 /fc <名称> 接入。',

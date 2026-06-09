@@ -11,7 +11,7 @@ test('buildRecapMessages sends intro and recent turn as separate messages', () =
     user: '最近这个功能修好了吗？',
     assistant: '修好了，已经补了测试并验证通过。',
   }, {
-    intro: '✅ 已接入 "demo" [codex]\n📁 im2cc',
+    intro: '✅ 已接入 "demo" [codex]\n📁 cc',
     transport: 'feishu',
   })
 
@@ -58,12 +58,12 @@ test('buildRecapMessages keeps total count within three when intro is separate',
     user: '请继续。',
     assistant,
   }, {
-    intro: '✅ 已接入 "demo" [codex]\n📁 im2cc',
+    intro: '✅ 已接入 "demo" [codex]\n📁 cc',
     transport: 'wechat',
   })
 
   assert.equal(messages.length, 3)
-  assert.equal(messages[0], '✅ 已接入 "demo" [codex]\n📁 im2cc')
+  assert.equal(messages[0], '✅ 已接入 "demo" [codex]\n📁 cc')
   assert.match(messages[1], /📋 最近一轮对话 1\/2/)
   assert.match(messages[2], /📋 最近一轮对话 2\/2/)
 })

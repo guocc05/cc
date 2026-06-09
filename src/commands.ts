@@ -1,11 +1,11 @@
 /**
- * @input:    用户消息文本, Im2ccConfig, Binding
+ * @input:    用户消息文本, CcConfig, Binding
  * @output:   parseCommand(), handleCommand(), renderRegisteredSessionList(), renderLocalRegisteredSessionList() — 命令解析与执行、IM/本地列表渲染（含 /fc 双参数注册模式、/fqon /fqoff /fqs、/ls 工作区项目列表、/clear /compact /model 会话控制 alias 层、/btw side fork 旁路讨论；状态查看统一用 /fs）
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 
 import path from 'node:path'
-import type { Im2ccConfig } from './config.js'
+import type { CcConfig } from './config.js'
 import type { OutgoingMessage, TransportType } from './transport.js'
 import { textMessage } from './message-format.js'
 import { validatePath, isValidSessionName } from './security.js'
@@ -76,7 +76,7 @@ export function parseCommand(text: string): ParsedCommand | null {
 export async function handleCommand(
   cmd: ParsedCommand,
   conversationId: string,
-  config: Im2ccConfig,
+  config: CcConfig,
   transport: TransportType = 'feishu',
   sendReply?: (message: string | OutgoingMessage) => Promise<void>,
 ): Promise<string | OutgoingMessage> {
@@ -106,7 +106,7 @@ export async function handleCommand(
   }
 }
 
-async function handleFn(args: string, conversationId: string, config: Im2ccConfig, transport: TransportType = 'feishu'): Promise<string | OutgoingMessage> {
+async function handleFn(args: string, conversationId: string, config: CcConfig, transport: TransportType = 'feishu'): Promise<string | OutgoingMessage> {
   if (!args) {
     return renderFnUsage()
   }
@@ -161,7 +161,7 @@ async function handleFn(args: string, conversationId: string, config: Im2ccConfi
         '❌ 当前机器已启用本地 Claude 渠道选择器，IM 端没有 TTY 无法弹菜单。',
         '',
         '两种解决方式：',
-        '  ① 在电脑端配置一个 IM 默认渠道：打开 ~/.im2cc/config.json 加上',
+        '  ① 在电脑端配置一个 IM 默认渠道：打开 ~/.cc/config.json 加上',
         '       "imDefaultClaudeProfile": "official"',
         '     之后 IM 端 /fn 会用该 profile 非交互启动。',
         '  ② 回电脑终端运行 fn <名称>（可交互选渠道）。',
@@ -197,7 +197,7 @@ async function handleFn(args: string, conversationId: string, config: Im2ccConfi
       `⚙️ 模式: ${binding.permissionMode}`,
       supportNote,
       '',
-      `回到电脑: im2cc open ${sessionName}`,
+      `回到电脑: cc open ${sessionName}`,
     ].filter(Boolean).join('\n')
   } catch (err) {
     return `❌ 创建失败: ${err instanceof Error ? err.message : String(err)}`
@@ -210,7 +210,7 @@ function renderFnUsage(): OutgoingMessage {
     '📝 创建新对话',
     '',
     '用法：/fn <对话名> <项目短名 | 完整路径>',
-    '示例：/fn auth im2cc',
+    '示例：/fn auth cc',
     '     /fn exp ~/Downloads/new-repo',
     '',
     '对话名　：给这次对话起的标签，以后用 /fc <对话名> 可以重连',
@@ -228,7 +228,7 @@ function renderFnMissingProject(sessionName: string): OutgoingMessage {
     '📝 缺少项目目录',
     '',
     '用法：/fn <对话名> <项目短名 | 完整路径>',
-    `示例：/fn ${sessionName} im2cc`,
+    `示例：/fn ${sessionName} cc`,
     `     /fn ${sessionName} ~/Downloads/new-repo`,
     '',
     '项目目录：短名=之前在电脑端用过的项目（/ls 可查看）；',
@@ -245,7 +245,7 @@ function renderFnProjectNotFound(query: string): OutgoingMessage {
   const lines = [
     `❌ 没找到项目 "${query}"`,
     '',
-    '如果是全新项目（之前没用 im2cc 创建过对话），请：',
+    '如果是全新项目（之前没用 cc 创建过对话），请：',
     '  1. 在电脑端 fn <名称> 先创建一个对话（推荐），或',
     `  2. 在这里用完整路径，如 /fn <对话名> ~/Code/${query}`,
   ]
@@ -313,7 +313,7 @@ function formatFcAlreadyConnectedMessage(existing: Binding, requestedTarget: str
   ].join('\n')
 }
 
-async function handleFc(args: string, conversationId: string, config: Im2ccConfig, transport: TransportType = 'feishu'): Promise<string> {
+async function handleFc(args: string, conversationId: string, config: CcConfig, transport: TransportType = 'feishu'): Promise<string> {
   const existing = getBinding(conversationId)
   if (existing) {
     const requestedTarget = args ? args.split(/\s+/)[0] ?? '' : ''
@@ -405,7 +405,7 @@ async function listAvailableSessions(): Promise<string> {
 async function connectToRegistered(
   reg: { name: string; sessionId: string; cwd: string; permissionMode?: string; tool?: ToolId },
   conversationId: string,
-  config: Im2ccConfig,
+  config: CcConfig,
   transport: TransportType = 'feishu',
 ): Promise<string> {
   const tool = (reg.tool ?? 'claude') as ToolId
@@ -450,7 +450,7 @@ async function connectToDiscovered(
   name: string,
   session: { sessionId: string; name: string; projectPath: string; projectName: string },
   conversationId: string,
-  config: Im2ccConfig,
+  config: CcConfig,
   transport: TransportType = 'feishu',
 ): Promise<string> {
   const pathCheck = validateSessionProjectPath(session.projectPath)
@@ -472,7 +472,7 @@ async function handleFcRegisterAndConnect(
   name: string,
   sessionQuery: string,
   conversationId: string,
-  config: Im2ccConfig,
+  config: CcConfig,
   transport: TransportType = 'feishu',
 ): Promise<string> {
   if (!isValidSessionName(name)) {
@@ -531,7 +531,7 @@ function formatModeList(modes: ModeInfo[], currentMode: string): string {
   }).join('\n\n')
 }
 
-function handleMode(args: string, conversationId: string, config: Im2ccConfig): string {
+function handleMode(args: string, conversationId: string, config: CcConfig): string {
   const binding = getBinding(conversationId)
   if (!binding) return '该群未绑定，请先 /fc 或 /fn'
 
@@ -604,7 +604,7 @@ function handleMode(args: string, conversationId: string, config: Im2ccConfig): 
  * /clear — 清空当前对话：调 driver 创建新 sessionId 替换 binding，重置 modelOverride。
  * 对话名 / cwd / permissionMode 不变；旧 sessionId 自动孤立但磁盘文件不删（与现有"漂移孤儿"等同）。
  */
-async function handleClear(conversationId: string, config: Im2ccConfig): Promise<string> {
+async function handleClear(conversationId: string, config: CcConfig): Promise<string> {
   const binding = getBinding(conversationId)
   if (!binding) return '❌ 当前会话未连接对话，请先 /fc 或 /fn'
 
@@ -632,7 +632,7 @@ async function handleClear(conversationId: string, config: Im2ccConfig): Promise
     if (!claudeProfile) {
       return [
         '❌ 当前机器启用了本地 Claude 渠道选择器，IM 端无 TTY 无法弹菜单。',
-        '请在 ~/.im2cc/config.json 加 "imDefaultClaudeProfile": "<渠道名>"，或回电脑端处理。',
+        '请在 ~/.cc/config.json 加 "imDefaultClaudeProfile": "<渠道名>"，或回电脑端处理。',
       ].join('\n')
     }
   }
@@ -1190,14 +1190,14 @@ function handleFqStatus(): string {
 
 export function renderUnifiedHelp(): string {
   return [
-    '📖 im2cc 帮助',
+    '📖 cc 帮助',
     '',
     '首次使用：先在电脑终端运行 fn <名称> 创建第一个对话，再回到飞书或微信发送 /fc <名称> 接入。',
     '',
     '电脑终端：',
     'fhelp                    — 查看帮助',
-    'im2cc onboard            — 查看首次安装引导',
-    'im2cc update             — 更新到最新版本',
+    'cc onboard            — 查看首次安装引导',
+    'cc update             — 更新到最新版本',
     'fn <名称>                — 用当前目录创建对话',
     'fn-codex <名称>          — 用当前目录创建 Codex 对话',
     'fn-gemini <名称>         — 用当前目录创建 Gemini 对话',

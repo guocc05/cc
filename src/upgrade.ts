@@ -7,8 +7,8 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const PUBLIC_REPO_URL = 'https://github.com/JVever/im2cc'
-export const NPM_PACKAGE_NAME = 'im2cc'
+export const PUBLIC_REPO_URL = 'https://github.com/JVever/cc'
+export const NPM_PACKAGE_NAME = 'cc'
 
 export type InstallMode = 'npm-global' | 'git-checkout' | 'tarball' | 'unknown'
 
@@ -20,9 +20,9 @@ export interface InstallRootInfo {
 
 function detectInstallMode(root: string): InstallMode {
   if (fs.existsSync(path.join(root, '.git'))) return 'git-checkout'
-  // npm 全局安装：路径里带 node_modules/im2cc（macOS/Linux 均如此；Windows 会是反斜杠）
+  // npm 全局安装：路径里带 node_modules/cc（macOS/Linux 均如此；Windows 会是反斜杠）
   const normalized = root.replace(/\\/g, '/')
-  if (/\/node_modules\/im2cc(\/|$)/.test(normalized)) return 'npm-global'
+  if (/\/node_modules\/cc(\/|$)/.test(normalized)) return 'npm-global'
   // 有 install.sh 但没 .git → 历史 tarball 安装（已弃用）
   if (fs.existsSync(path.join(root, 'install.sh'))) return 'tarball'
   return 'unknown'

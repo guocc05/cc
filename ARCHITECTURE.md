@@ -1,4 +1,4 @@
-# im2cc Architecture
+# cc Architecture
 
 > **维护者**：/cto。本文件由各 feature 的架构决策增量沉淀（见每个 feature 的 §Plan 段）。
 > **首次创建**：2026-05-10，由 `@20260510-office-doc-relay` bootstrap。
@@ -22,7 +22,7 @@
                           (单实例)
               │
               ▼
-        ~/.im2cc/data/
+        ~/.cc/data/
         (registry / bindings / queue)
 ```
 
@@ -49,7 +49,7 @@
 | 进程管理 | tmux | 用于 AI CLI 交互式 session 的容器（CLI 端用） |
 | 飞书 SDK | `@larksuiteoapi/node-sdk` | 官方 SDK；已支持双域名 fallback (open.feishu.cn ↔ open.larksuite.com) |
 | 微信 | ClawBot iLink (REST) | 第三方 bot 协议；无官方 IM 通道 |
-| 配置 | JSON 文件 (~/.im2cc/) | 无 DB 依赖；原子写 + chmod 0600 |
+| 配置 | JSON 文件 (~/.cc/) | 无 DB 依赖；原子写 + chmod 0600 |
 
 **OS 限定**：仅 macOS（package.json `"os": ["darwin"]`）。
 
@@ -58,7 +58,7 @@
 ## 3. 数据存储
 
 ```
-~/.im2cc/
+~/.cc/
 ├── config.json              # 飞书凭证、白名单、默认参数（chmod 0600）
 ├── wechat-account.json      # 微信 bot token (chmod 0600)
 ├── data/
@@ -70,7 +70,7 @@
 │   └── inflight/            # 执行中任务的持久化 snapshot
 └── logs/                    # daemon 日志
 
-<project-cwd>/.im2cc-inbox/   # IM 上传文件的暂存目录（chmod 0600 + .gitignore + TTL 清理）
+<project-cwd>/.cc-inbox/   # IM 上传文件的暂存目录（chmod 0600 + .gitignore + TTL 清理）
 ```
 
 ---
@@ -81,16 +81,16 @@
 
 ### 4.1 daemon 单实例不变量
 任何时刻只能有一个 daemon 进程。三层纵深防御：
-- 启动时杀僵尸（`im2cc start` 内部）
+- 启动时杀僵尸（`cc start` 内部）
 - 运行时自检（每分钟一次 PID 校验）
-- lock 文件（`~/.im2cc/daemon.pid`）
+- lock 文件（`~/.cc/daemon.pid`）
 > 历史教训：2026-03-24 修复的最严重 bug 来自双 daemon 并发写 registry，导致 session 漂移。
 
 ### 4.2 registry 是 session 身份的唯一权威
 - tmux session 命名只是进程管理标签，**不是身份**
 - 所有 session lookup / 路由 / 绑定切换都必须通过 `registry.ts`
 - /fc /fn /fk 等命令都依赖 registry 派生
-- **tmux session 引用必须精确匹配**：所有 `tmux ... -t <name>` 调用必须用 `-t =<name>` 语法强制禁用 prefix match。否则当 session 名互为前缀时（如 `im2cc` / `im2cc01`），prefix match 会让前者命中后者，造成 has-session 误判、kill-session 误杀、attach 切到错的 session 等连锁问题。引入：`@20260512-fc-tmux-client-preempt` (2026-05-12)
+- **tmux session 引用必须精确匹配**：所有 `tmux ... -t <name>` 调用必须用 `-t =<name>` 语法强制禁用 prefix match。否则当 session 名互为前缀时（如 `cc` / `cc01`），prefix match 会让前者命中后者，造成 has-session 误判、kill-session 误杀、attach 切到错的 session 等连锁问题。引入：`@20260512-fc-tmux-client-preempt` (2026-05-12)
 
 ### 4.3 独占访问
 同一 session 同一时刻只能在一个端使用（电脑 tmux / 飞书 / 微信三端互斥），由 binding 机制保证。
@@ -130,7 +130,7 @@ AI 工具在远程执行（IM 端经 daemon 调用）时若调用反向交互工
 具体落实在 `src/turn-aggregator.ts` 状态机:`buffering / tool_running / turn_end` 三态 + debounce 1.5s + threshold 10s。
 
 **约束**:
-- 与 §4.7 反向交互桥接 (AskUserQuestion) 共同构成 "im2cc 端到端工具调用透明度"
+- 与 §4.7 反向交互桥接 (AskUserQuestion) 共同构成 "cc 端到端工具调用透明度"
 - AskUserQuestion 走 PreToolUse hook 绕过 base-driver,aggregator 显式跳过 name='AskUserQuestion' 的 tool_use,与 §4.7 互不冲突
 - 任何新增 AI 工具 driver 必须接入 onTurnEvent 事件流,不能只发 raw text
 
@@ -208,7 +208,7 @@ interface ToolCapabilities {
 **引入**：早于 V4.0（2026-04 之前；本节为追溯文档化）
 
 文件从 IM 落地到 AI 工具的统一路径：
-1. `TransportAdapter.downloadMedia()` 下载到 `<binding.cwd>/.im2cc-inbox/<messageId>.<ext>`（chmod 0600 + 目录自带 `.gitignore`）
+1. `TransportAdapter.downloadMedia()` 下载到 `<binding.cwd>/.cc-inbox/<messageId>.<ext>`（chmod 0600 + 目录自带 `.gitignore`）
 2. `stageFile()` 暂存到 per-chat 内存队列
 3. 用户下一条文本指令到达时，`consumeStaged()` 取出文件路径拼入 prompt
 4. `runInboxCleanup()` 按 `inboxTtlMinutes` 周期清理过期文件
@@ -228,7 +228,7 @@ AI 调用 AskUserQuestion
     │
     ▼
 Claude PreToolUse hook (hooks/askuser-hook.mjs，由 daemon 注入临时 settings.json)
-    │  ↕ unix socket (~/.im2cc/sockets/askuser.sock，权限 0700/0600)
+    │  ↕ unix socket (~/.cc/sockets/askuser.sock，权限 0700/0600)
     ▼
 daemon askuser-bridge.ts
     │
@@ -287,6 +287,6 @@ bash scripts/smoke.sh                              # 端到端冒烟（需活跃
 |---|---|---|
 | 2026-05-10 | @20260510-office-doc-relay | bootstrap ARCHITECTURE.md；引入 §5.1 ToolCapabilities-driven 文件处理策略；追溯文档化 §5.2 IM 文件暂存机制 |
 | 2026-05-10 | @20260510-im-askuserquestion-bridge | 引入 §4.7（远程交互反向桥接强制，与 §4.5 互补）；§4.8（Gemini 维护模式，项目级决策）；§5.3（IM 反向交互桥接架构：PreToolUse hook + IPC + transport 卡片） |
-| 2026-05-11 | @20260510-im-slash-passthrough | 无新红线 / 跨 feature 模式；spike 实证 `-p` / `exec` 非交互模式下纯"工具内置斜杠命令透传"不可行（仅 Claude /compact 例外）；feature 在 commands.ts 实现"会话控制 alias 层"——/clear /compact /model /status 注册为 im2cc 命令；详见 docs/features/20260510-im-slash-passthrough.md §Plan |
+| 2026-05-11 | @20260510-im-slash-passthrough | 无新红线 / 跨 feature 模式；spike 实证 `-p` / `exec` 非交互模式下纯"工具内置斜杠命令透传"不可行（仅 Claude /compact 例外）；feature 在 commands.ts 实现"会话控制 alias 层"——/clear /compact /model /status 注册为 cc 命令；详见 docs/features/20260510-im-slash-passthrough.md §Plan |
 | 2026-05-13 | @20260513-im-btw-side-fork | 引入 §4.10（远程执行 side fork 旁路讨论生命周期红线，与 §4.2 / §4.7 / §4.9 兼容）；spike 端到端实证：`claude -p --resume <fork_id>` 接受 cp 出的 fork session 文件 + 完整继承主对话上下文 + 只写 fork 文件不污染 baseline + 文件名/内部 sessionId 字段不一致仍 work；范式为"OS 层 cp + driver 标准调用 + finally 清理"；详见 docs/features/20260513-im-btw-side-fork.md §Plan |
 | 2026-05-13 | @20260513-im-btw-side-fork REVISION | §4.10 加"工具限制硬约束"——fork turn 必须经 driver `--disallowed-tools` 禁用 Edit/Write/NotebookEdit/Bash/Task/TodoWrite/AskUserQuestion/SlashCommand，保证不污染工作目录文件系统；对齐 Claude REPL /btw 无损承诺，保留只读类工具以满足 IM 端实用诉求 |

@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile、askUserTimeoutMinutes、modelCatalogs), ~/.im2cc/wechat-account.json
+ * @input:    ~/.cc/config.json (飞书凭证、用户白名单、默认参数、imDefaultClaudeProfile、askUserTimeoutMinutes、modelCatalogs), ~/.cc/wechat-account.json
  * @output:   loadConfig(), saveConfig(), getDataDir(), getDaemonLockDir(), getMessageDedupDir(), getAntiPomodoroFile(), getAskUserSocketPath(), getAskUserTimeoutMinutes(), getSessionDir(), getSessionsRootDir(), loadWeChatAccount(), saveWeChatAccount() — 配置读写和数据目录管理
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 
-export interface Im2ccConfig {
+export interface CcConfig {
   feishu: {
     appId: string
     appSecret: string
@@ -39,14 +39,14 @@ export interface Im2ccConfig {
   /**
    * 可选：覆盖内置的 /model 候选模型清单（per-tool 完全替换）。
    * 缺失或字段为非数组时 fallback 到内置默认（详见 src/model-catalog.ts）。
-   * 用户在 ~/.im2cc/config.json 这样写：
+   * 用户在 ~/.cc/config.json 这样写：
    *   "modelCatalogs": {
    *     "claude": [
    *       { "shortName": "opus-5", "fullName": "claude-opus-5", "description": "Opus 5" }
    *     ],
    *     "codex": [...]
    *   }
-   * 让用户不升级 im2cc 也能用新模型 / 自定义偏好子集。
+   * 让用户不升级 cc 也能用新模型 / 自定义偏好子集。
    */
   modelCatalogs?: {
     claude?: Array<{ shortName: string; fullName: string; description: string }>
@@ -54,7 +54,7 @@ export interface Im2ccConfig {
   }
 }
 
-const CONFIG_DIR = path.join(os.homedir(), '.im2cc')
+const CONFIG_DIR = path.join(os.homedir(), '.cc')
 const CONFIG_FILE = path.join(CONFIG_DIR, 'config.json')
 const DATA_DIR = path.join(CONFIG_DIR, 'data')
 const LOG_DIR = path.join(CONFIG_DIR, 'logs')
@@ -67,7 +67,7 @@ const ANTI_POMODORO_FILE = path.join(DATA_DIR, 'anti-pomodoro.json')
 const SOCKETS_DIR = path.join(CONFIG_DIR, 'sockets')
 const SESSIONS_DIR = path.join(CONFIG_DIR, 'sessions')
 
-const DEFAULT_CONFIG: Im2ccConfig = {
+const DEFAULT_CONFIG: CcConfig = {
   feishu: { appId: '', appSecret: '' },
   claudeLauncher: '',
   imDefaultClaudeProfile: '',
@@ -92,14 +92,14 @@ function ensureDirs(): void {
   }
 }
 
-export function loadConfig(): Im2ccConfig {
+export function loadConfig(): CcConfig {
   ensureDirs()
   if (!fs.existsSync(CONFIG_FILE)) {
     return { ...DEFAULT_CONFIG }
   }
   const raw = fs.readFileSync(CONFIG_FILE, 'utf-8')
-  const parsed = JSON.parse(raw) as Partial<Im2ccConfig>
-  const merged: Im2ccConfig = {
+  const parsed = JSON.parse(raw) as Partial<CcConfig>
+  const merged: CcConfig = {
     ...DEFAULT_CONFIG,
     ...parsed,
     feishu: {
@@ -110,7 +110,7 @@ export function loadConfig(): Im2ccConfig {
   return merged
 }
 
-export function saveConfig(config: Im2ccConfig): void {
+export function saveConfig(config: CcConfig): void {
   ensureDirs()
   const tmpFile = CONFIG_FILE + '.tmp'
   fs.writeFileSync(tmpFile, JSON.stringify(config, null, 2), { mode: 0o600 })
@@ -177,7 +177,7 @@ import { getBuiltinDefault, migrateLegacyMode, isValidMode } from './mode-policy
 import type { ToolId } from './tool-driver.js'
 
 /** 获取工具的默认模式（优先 per-tool 配置，否则迁移旧配置，最后用内置默认） */
-export function getDefaultMode(tool: ToolId, config?: Im2ccConfig): string {
+export function getDefaultMode(tool: ToolId, config?: CcConfig): string {
   const cfg = config ?? loadConfig()
 
   // 1. per-tool 配置
@@ -198,7 +198,7 @@ export function getDefaultMode(tool: ToolId, config?: Im2ccConfig): string {
  * 读取 AskUserQuestion 超时（分钟），夹紧到 [1, 9]。
  * 越界时写日志告警（AC-9）。
  */
-export function getAskUserTimeoutMinutes(config?: Im2ccConfig): number {
+export function getAskUserTimeoutMinutes(config?: CcConfig): number {
   const cfg = config ?? loadConfig()
   const raw = cfg.askUserTimeoutMinutes ?? DEFAULT_CONFIG.askUserTimeoutMinutes
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {

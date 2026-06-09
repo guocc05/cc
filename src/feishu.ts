@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import dns from 'node:dns/promises'
 import * as lark from '@larksuiteoapi/node-sdk'
 import axios from 'axios'
-import type { Im2ccConfig } from './config.js'
+import type { CcConfig } from './config.js'
 import type { TransportAdapter, IncomingMessage, OutgoingMessage } from './transport.js'
 import { getCursor, setCursor, initCursorIfMissing } from './poll-cursor.js'
 import { log, error } from './logger.js'
@@ -56,6 +56,26 @@ export function computeNextDelayMs(idleMs: number): number {
   return BACKOFF_TIERS[BACKOFF_TIERS.length - 1].intervalMs
 }
 
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function describeAxiosError(err: unknown): string {
+  const candidate = err as {
+    message?: string
+    response?: { status?: number; data?: unknown }
+  }
+  const base = candidate?.message ? String(candidate.message) : String(err)
+  const status = candidate?.response?.status
+  const data = candidate?.response?.data
+  if (status === undefined && data === undefined) return base
+  return `${base}${status !== undefined ? ` status=${status}` : ''}${data === undefined ? '' : ` data=${safeJson(data)}`}`
+}
+
 export class FeishuAdapter implements TransportAdapter {
   readonly type = 'feishu' as const
   private client: lark.Client
@@ -71,10 +91,10 @@ export class FeishuAdapter implements TransportAdapter {
   private readonly FEISHU_RECOVERY_INTERVAL_MS = 5 * 60 * 1000
   private readonly FEISHU_RECOVERY_NEED_OK = 3
 
-  constructor(private config: Im2ccConfig) {
+  constructor(private config: CcConfig) {
     const { appId, appSecret } = config.feishu
     if (!appId || !appSecret) {
-      throw new Error('飞书 App ID 或 App Secret 未配置。请运行 im2cc setup')
+      throw new Error('飞书 App ID 或 App Secret 未配置。请运行 cc setup')
     }
     this.client = this.createClient()
   }
@@ -186,7 +206,7 @@ export class FeishuAdapter implements TransportAdapter {
             setCursor(chat.chatId, Math.floor(maxCreateTime / 1000).toString())
           }
         } catch (err) {
-          error(`[poll] 拉取群 ${chat.chatId} 消息失败: ${err}`)
+          error(`[poll] 拉取群 ${chat.chatId} 消息失败: ${describeAxiosError(err)}`)
           // 失败时也按当前 idleMs 推进 nextFireAt，避免下一 tick 立即重连失败群
           const failedAt = Date.now()
           state.nextFireAt = failedAt + computeNextDelayMs(failedAt - state.lastActiveAt)
@@ -194,7 +214,7 @@ export class FeishuAdapter implements TransportAdapter {
       }
       log(`[feishu] poll 统计: fetched=${fetched} skipped=${skipped} total=${chats.length}`)
     } catch (err) {
-      error(`[poll] 轮询失败: ${err}`)
+      error(`[poll] 轮询失败: ${describeAxiosError(err)}`)
     }
   }
 

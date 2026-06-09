@@ -1,4 +1,4 @@
-# im2cc — IM to Claude Code
+# cc — IM to Claude Code
 
 通过飞书/微信远程操控本地 AI 编程工具（Claude Code、Codex、Gemini），电脑/手机无缝流转。
 
@@ -53,10 +53,10 @@ IM 层（TransportAdapter）     工具层（ToolDriver）
 | Claude/Codex/Gemini 调用 | `src/*-driver.ts` |
 | 消息队列 | `src/queue.ts` |
 | IM 消息接收 | `src/feishu.ts` 或 `src/wechat.ts` |
-| CLI（终端命令） | `bin/im2cc.ts` |
-| Shell 命令（fn/fc/fl） | `shell/im2cc-shell-functions.zsh` |
+| CLI（终端命令） | `bin/cc.ts` |
+| Shell 命令（fn/fc/fl） | `shell/cc-shell-functions.zsh` |
 | Session 绑定 | `src/session.ts` + `src/registry.ts` |
-| 配置 | `src/config.ts`，数据在 `~/.im2cc/` |
+| 配置 | `src/config.ts`，数据在 `~/.cc/` |
 | 守护进程生命周期 | `src/index.ts` + `src/daemon-process.ts` |
 
 ## 5. 验证

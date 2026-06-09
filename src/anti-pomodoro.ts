@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/data/anti-pomodoro.json, 当前时间, 会话消息
+ * @input:    ~/.cc/data/anti-pomodoro.json, 当前时间, 会话消息
  * @output:   反茄钟状态读写、周期推进、休息期单次后台指令额度、延迟结果队列、daemon 同步控制器
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */

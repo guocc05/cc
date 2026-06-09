@@ -6,7 +6,7 @@ import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
-// 用临时 HOME 隔离 ~/.im2cc 配置和 socket
+// 用临时 HOME 隔离 ~/.cc 配置和 socket
 const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'askuser-bridge-test-'))
 process.env.HOME = tmpHome
 process.env.IM2CC_LOG_QUIET = '1' // 测试期不刷日志

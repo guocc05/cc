@@ -9,17 +9,17 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
-const cliPath = path.join(rootDir, 'dist', 'bin', 'im2cc.js')
+const cliPath = path.join(rootDir, 'dist', 'bin', 'cc.js')
 const daemonProcessModulePath = path.join(rootDir, 'dist', 'src', 'daemon-process.js')
 
 function createHomeDir() {
-  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-smoke-home-'))
-  fs.mkdirSync(path.join(homeDir, '.im2cc'), { recursive: true })
+  const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-smoke-home-'))
+  fs.mkdirSync(path.join(homeDir, '.cc'), { recursive: true })
   return homeDir
 }
 
 function pidFileFor(homeDir) {
-  return path.join(homeDir, '.im2cc', 'daemon.pid')
+  return path.join(homeDir, '.cc', 'daemon.pid')
 }
 
 function testEnv(homeDir) {
@@ -45,7 +45,7 @@ function runCli(homeDir, args) {
 }
 
 function writeWeChatAccount(homeDir, baseUrl) {
-  fs.writeFileSync(path.join(homeDir, '.im2cc', 'wechat-account.json'), JSON.stringify({
+  fs.writeFileSync(path.join(homeDir, '.cc', 'wechat-account.json'), JSON.stringify({
     botToken: 'test-token',
     baseUrl,
     ilinkBotId: 'bot-id',
@@ -109,7 +109,7 @@ function spawnIdleNode(args, options = {}) {
 }
 
 function processListingFailureMessage() {
-  const probe = spawnSync('pgrep', ['-f', '__im2cc_process_listing_probe_no_match__'], {
+  const probe = spawnSync('pgrep', ['-f', '__cc_process_listing_probe_no_match__'], {
     encoding: 'utf-8',
   })
 
@@ -186,11 +186,11 @@ test('killAllDaemonProcesses kills zombie processes on startup', async (t) => {
 
   const preExisting = listDaemonProcessPids(undefined, process.pid)
   if (preExisting.length > 0) {
-    t.skip(`live im2cc daemon already running (PID: ${preExisting.join(', ')})`)
+    t.skip(`live cc daemon already running (PID: ${preExisting.join(', ')})`)
     return
   }
 
-  // 创建两个模拟僵尸进程（设置 process.title = im2cc-daemon）
+  // 创建两个模拟僵尸进程（设置 process.title = cc-daemon）
   const zombie1 = spawnIdleNode(['-e', `process.title='${DAEMON_PROCESS_TITLE}'; setInterval(()=>{},1000)`])
   const zombie2 = spawnIdleNode(['-e', `process.title='${DAEMON_PROCESS_TITLE}'; setInterval(()=>{},1000)`])
 
@@ -219,27 +219,27 @@ test('killAllDaemonProcesses kills zombie processes on startup', async (t) => {
 })
 
 test('daemon identity matcher recognizes marker/title across install paths', async () => {
-  const { commandLooksLikeIm2ccDaemon } = await import(daemonProcessModulePath)
+  const { commandLooksLikeCcDaemon } = await import(daemonProcessModulePath)
   const currentEntryPath = '/Users/example/current/dist/src/index.js'
 
   assert.equal(
-    commandLooksLikeIm2ccDaemon({
+    commandLooksLikeCcDaemon({
       comm: 'node',
-      command: 'node /tmp/other-checkout/dist/src/index.js im2cc-daemon',
+      command: 'node /tmp/other-checkout/dist/src/index.js cc-daemon',
     }, currentEntryPath),
     true,
   )
 
   assert.equal(
-    commandLooksLikeIm2ccDaemon({
-      comm: 'im2cc-daemon',
+    commandLooksLikeCcDaemon({
+      comm: 'cc-daemon',
       command: 'node /tmp/other-checkout/dist/src/index.js',
     }, currentEntryPath),
     true,
   )
 
   assert.equal(
-    commandLooksLikeIm2ccDaemon({
+    commandLooksLikeCcDaemon({
       comm: 'node',
       command: 'node /tmp/other-checkout/dist/src/index.js',
     }, currentEntryPath),
@@ -258,7 +258,7 @@ test('start launches daemon without false IPC disconnect failure', async (t) => 
 
   const preExisting = listDaemonProcessPids(undefined, process.pid)
   if (preExisting.length > 0) {
-    t.skip(`live im2cc daemon already running (PID: ${preExisting.join(', ')})`)
+    t.skip(`live cc daemon already running (PID: ${preExisting.join(', ')})`)
     return
   }
 

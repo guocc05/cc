@@ -35,6 +35,7 @@ export class ClaudeDriver extends BaseToolDriver {
         timeout: 5000,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: buildClaudeLauncherEnv({ phase: 'version' }),
+        shell: process.platform === 'win32',
       })
       return result.status === 0 ? String(result.stdout ?? '').trim() || 'unknown' : 'unknown'
     } catch {
@@ -49,6 +50,7 @@ export class ClaudeDriver extends BaseToolDriver {
         timeout: 5000,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: buildClaudeLauncherEnv({ phase: 'version' }),
+        shell: process.platform === 'win32',
       })
       return result.status === 0
     } catch {

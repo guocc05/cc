@@ -24,7 +24,7 @@
 
 ## AC 验证流程（建议）
 
-1. 启动 daemon：`im2cc start`
+1. 启动 daemon：`cc start`
 2. 在飞书 bot 群里 `/fc <session-name>` 接入一个绑定 Claude 的 session
 3. 发送 fixture 文件 → 紧跟一句"请在回复中包含文件中出现的唯一短语原文"
 4. 等待 AI 回复 → grep 短语是否出现

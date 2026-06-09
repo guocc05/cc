@@ -4,11 +4,11 @@
 
 ## 前置事实（不要每次再问）
 
-- **分发方式**：npm 全局包（`npm i -g im2cc`）。GitHub 只是源码仓，**不是**分发渠道。
-- **源码仓**：`https://github.com/JVever/im2cc.git`（branch：`master`）
-- **npm 包名**：`im2cc`
+- **分发方式**：npm 全局包（`npm i -g cc`）。GitHub 只是源码仓，**不是**分发渠道。
+- **源码仓**：`https://github.com/JVever/cc.git`（branch：`master`）
+- **npm 包名**：`cc`
 - **语言偏好**：commit message 用中文（参考 `git log --oneline` 风格）
-- **不自动重启 daemon**：日常开发 commit 后不要 `im2cc stop/start`；用户执行 `im2cc update` 时代码已自动处理重启（见 `bin/im2cc.ts:cmdUpdate`），所以发布者也无需本地重启。
+- **不自动重启 daemon**：日常开发 commit 后不要 `cc stop/start`；用户执行 `cc update` 时代码已自动处理重启（见 `bin/cc.ts:cmdUpdate`），所以发布者也无需本地重启。
 
 ## 决策表：版本号怎么 bump
 
@@ -20,7 +20,7 @@
 | 新增功能、非破坏性改动 | **minor**（0.3.0 → 0.4.0） | 新命令、新超时策略、新 IM 通道 |
 | 破坏 API / 配置向后不兼容 | **major**（0.3.0 → 1.0.0） | 删除命令、字段重命名且不做迁移、协议变更 |
 
-**判断原则**：如果老用户不做任何修改、直接 `im2cc update` 就应该继续工作 → patch / minor；如果需要用户看 changelog 主动调整 → major。
+**判断原则**：如果老用户不做任何修改、直接 `cc update` 就应该继续工作 → patch / minor；如果需要用户看 changelog 主动调整 → major。
 
 配置字段迁移（如本次 `defaultTimeoutSeconds` → `defaultIdleTimeoutSeconds`）算 **patch** — 因为 `loadConfig` 里做了自动迁移，用户配置继续生效。
 
@@ -120,10 +120,10 @@ npm publish
 ### Step 6 — 验证
 
 ```bash
-npm view im2cc version   # 应显示刚发布的新版本
+npm view cc version   # 应显示刚发布的新版本
 ```
 
-此时老用户跑 `im2cc update` 就能拿到新版，并自动重启 daemon。
+此时老用户跑 `cc update` 就能拿到新版，并自动重启 daemon。
 
 ## 常见失败处理
 
@@ -134,7 +134,7 @@ npm view im2cc version   # 应显示刚发布的新版本
 | `npm publish` 报 EOTP / 要求 OTP 或 "Open this URL in your browser" | 见 Step 5 认证方式 — 本账号用浏览器 web auth |
 | `git push` 被拒（non-fast-forward） | `git pull --rebase`，**不要** `--force` |
 | 发现已 publish 但代码有 bug | **不要** `npm unpublish`（24h 后不可撤）；发 patch 版本修复 |
-| `npm view im2cc version` 滞后 | 正常，CDN 有 1-2 分钟延迟 |
+| `npm view cc version` 滞后 | 正常，CDN 有 1-2 分钟延迟 |
 
 ## 对 AI 助手的要求
 

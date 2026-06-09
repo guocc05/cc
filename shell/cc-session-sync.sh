@@ -1,14 +1,14 @@
 #!/bin/bash
-# im2cc-session-sync.sh — Claude Code SessionStart hook
-# 当 /clear、compact、resume 等操作创建/复用 session 时，自动同步 im2cc registry
+# cc-session-sync.sh — Claude Code SessionStart hook
+# 当 /clear、compact、resume 等操作创建/复用 session 时，自动同步 cc registry
 # 注意：Plan 模式 ExitPlan 在当前 Claude 版本已不再创建新 session（2026-04-17 实测验证），
 # 所以 Plan 模式不需要额外覆盖机制；本 hook 已覆盖所有真正会漂移的 case
 #
 # @input:    Claude Code hook JSON (stdin): session_id, cwd, transcript_path, source
-# @output:   更新 ~/.im2cc/data/registry.json（如 session ID 发生变化）+ 日志
+# @output:   更新 ~/.cc/data/registry.json（如 session ID 发生变化）+ 日志
 # @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
 
-LOG="$HOME/.im2cc/logs/session-sync.log"
+LOG="$HOME/.cc/logs/session-sync.log"
 log() { echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] $*" >> "$LOG" 2>/dev/null; }
 
 # 快速路径：不在 tmux 中则直接退出
@@ -17,29 +17,29 @@ if [[ -z "$TMUX" ]]; then
   exit 0
 fi
 
-# 获取 tmux session 名称，不是 im2cc 管理的则退出
+# 获取 tmux session 名称，不是 cc 管理的则退出
 tmux_name=$(tmux display-message -p '#{session_name}' 2>/dev/null)
-if [[ "$tmux_name" != im2cc-* ]]; then
-  log "SKIP: tmux_name='$tmux_name' not im2cc-managed"
+if [[ "$tmux_name" != cc-* ]]; then
+  log "SKIP: tmux_name='$tmux_name' not cc-managed"
   exit 0
 fi
 
 # 读取 stdin 中的 hook JSON
 input=$(cat)
 
-# 提取 im2cc session 名称（兼容新格式 im2cc-{tool}-{name}）
-im2cc_name="${tmux_name#im2cc-}"
-# 新格式 im2cc-{tool}-{name}: 去掉 tool 前缀
-case "$im2cc_name" in
-  claude-*|codex-*|gemini-*) im2cc_name="${im2cc_name#*-}" ;;
+# 提取 cc session 名称（兼容新格式 cc-{tool}-{name}）
+cc_name="${tmux_name#cc-}"
+# 新格式 cc-{tool}-{name}: 去掉 tool 前缀
+case "$cc_name" in
+  claude-*|codex-*|gemini-*) cc_name="${cc_name#*-}" ;;
 esac
-registry="$HOME/.im2cc/data/registry.json"
+registry="$HOME/.cc/data/registry.json"
 if [[ ! -f "$registry" ]]; then
   log "SKIP: registry not found at $registry"
   exit 0
 fi
 
-log "HOOK FIRED: tmux=$tmux_name name=$im2cc_name payload_len=${#input}"
+log "HOOK FIRED: tmux=$tmux_name name=$cc_name payload_len=${#input}"
 
 # 用 python3 解析 JSON 并更新 registry（原子写）
 python3 -c "
@@ -72,7 +72,7 @@ if not new_sid:
     sys.exit(0)
 
 registry_path = '$registry'
-name = '$im2cc_name'
+name = '$cc_name'
 
 reg = json.load(open(registry_path))
 if name not in reg:

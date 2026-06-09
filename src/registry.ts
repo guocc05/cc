@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/registry.json
+ * @input:    ~/.cc/registry.json
  * @output:   register(), lookup(), list(), remove() — 命名 session 注册表
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */

@@ -1,6 +1,6 @@
 /**
  * @input:    日志消息
- * @output:   log(), error() — 写入 ~/.im2cc/logs/daemon.log
+ * @output:   log(), error() — 写入 ~/.cc/logs/daemon.log
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
 

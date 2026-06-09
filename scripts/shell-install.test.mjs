@@ -11,14 +11,14 @@ const {
   SHELL_MARKER_START,
   SHELL_MARKER_END,
   IM2CC_SHELL_FUNCTIONS,
-  stripLegacyIm2ccLines,
+  stripLegacyCcLines,
   renderShellBlock,
   computeUpdatedRcContent,
   writeShellHelpersToRc,
 } = mod
 
 function tmpRcWith(content) {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-sh-rc-'))
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-sh-rc-'))
   const rc = path.join(tmp, '.zshrc')
   fs.writeFileSync(rc, content)
   return rc
@@ -31,21 +31,21 @@ test('renderShellBlock wraps functions with markers', () => {
   assert.ok(block.includes(IM2CC_SHELL_FUNCTIONS))
 })
 
-test('stripLegacyIm2ccLines removes old fn / fhelp / source-file lines', () => {
+test('stripLegacyCcLines removes old fn / fhelp / source-file lines', () => {
   const legacy = [
     'export PATH=/usr/local/bin:$PATH',
-    '# im2cc — 终端命令（旧格式）',
-    'source ~/.local/bin/im2cc-shell-functions.zsh',
-    'fn()       { im2cc new "$@"; }',
-    'fn-codex() { im2cc new --tool codex "$@"; }',
-    'fhelp()    { im2cc help; }',
-    'fqon()     { im2cc fqon "$@"; }',
+    '# cc — 终端命令（旧格式）',
+    'source ~/.local/bin/cc-shell-functions.zsh',
+    'fn()       { cc new "$@"; }',
+    'fn-codex() { cc new --tool codex "$@"; }',
+    'fhelp()    { cc help; }',
+    'fqon()     { cc fqon "$@"; }',
     'alias ll="ls -la"',
   ].join('\n')
-  const cleaned = stripLegacyIm2ccLines(legacy)
+  const cleaned = stripLegacyCcLines(legacy)
   assert.ok(cleaned.includes('export PATH'))
   assert.ok(cleaned.includes('alias ll'))
-  assert.ok(!cleaned.includes('im2cc-shell-functions'))
+  assert.ok(!cleaned.includes('cc-shell-functions'))
   assert.ok(!cleaned.includes('fn()'))
   assert.ok(!cleaned.includes('fn-codex'))
   assert.ok(!cleaned.includes('fhelp'))
@@ -90,11 +90,11 @@ test('computeUpdatedRcContent replaces old block content but keeps user content'
 test('computeUpdatedRcContent cleans legacy loose lines before appending block', () => {
   const existing = [
     'export FOO=bar',
-    '# im2cc — 终端命令（薄包装）',
-    'fn()       { im2cc new "$@"; }',
-    'fn-codex() { im2cc new --tool codex "$@"; }',
-    'fn-kimi()  { im2cc new --tool kimi "$@"; }',
-    'fhelp()    { im2cc help; }',
+    '# cc — 终端命令（薄包装）',
+    'fn()       { cc new "$@"; }',
+    'fn-codex() { cc new --tool codex "$@"; }',
+    'fn-kimi()  { cc new --tool kimi "$@"; }',
+    'fhelp()    { cc help; }',
     'export BAR=baz',
     '',
   ].join('\n')

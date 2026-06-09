@@ -10,7 +10,7 @@ const launcherModuleUrl = pathToFileURL(path.join(rootDir, 'dist', 'src', 'claud
 
 function writeLauncherScript(scriptPath, profile = 'glm') {
   fs.writeFileSync(scriptPath, `#!/usr/bin/env node
-if (process.argv[2] === '--im2cc-select-profile') {
+if (process.argv[2] === '--cc-select-profile') {
   process.stdout.write('${profile}\\n')
   process.exit(0)
 }
@@ -35,7 +35,7 @@ test('claude launcher defaults to bare claude when no local override is configur
 })
 
 test('claude launcher resolves configured local launcher and can select a profile', async () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-launcher-custom-'))
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-launcher-custom-'))
   const launcherPath = path.join(tempHome, 'mock-claude-launcher')
   writeLauncherScript(launcherPath, 'kimi')
 

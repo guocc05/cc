@@ -7,14 +7,14 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-feishu-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-feishu-'))
 process.env.HOME = testHome
-fs.mkdirSync(path.join(testHome, '.im2cc', 'data'), { recursive: true })
+fs.mkdirSync(path.join(testHome, '.cc', 'data'), { recursive: true })
 
 const { FeishuAdapter, computeNextDelayMs, BACKOFF_TIERS } = await import(path.join(rootDir, 'dist', 'src', 'feishu.js'))
 
 // 测试隔离：pollOnce 内部会调用 setCursor；这里用临时 HOME，避免污染用户数据。
-const CURSORS_FILE = path.join(os.homedir(), '.im2cc', 'data', 'poll-cursors.json')
+const CURSORS_FILE = path.join(os.homedir(), '.cc', 'data', 'poll-cursors.json')
 let cursorsBackup = null
 before(() => {
   cursorsBackup = fs.existsSync(CURSORS_FILE) ? fs.readFileSync(CURSORS_FILE, 'utf-8') : null
@@ -149,11 +149,11 @@ test('parseRestMessage 对 text 类型正常解析', () => {
     chat_id: 'oc_abc',
     msg_type: 'text',
     sender: { id: 'ou_user', sender_type: 'user' },
-    body: { content: JSON.stringify({ text: '/fc im2cc' }) },
+    body: { content: JSON.stringify({ text: '/fc cc' }) },
   })
   assert.ok(msg)
   assert.equal(msg.kind, 'text')
-  assert.equal(msg.text, '/fc im2cc')
+  assert.equal(msg.text, '/fc cc')
 })
 
 // --- per-chat 自适应退避 @20260511-feishu-poll-adaptive-backoff ---

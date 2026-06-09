@@ -1,5 +1,5 @@
 /**
- * @input:    ~/.im2cc/data/poll-cursors.json
+ * @input:    ~/.cc/data/poll-cursors.json
  * @output:   getCursor(), setCursor(), initCursorIfMissing() — 轮询游标持久化
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */

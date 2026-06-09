@@ -1,5 +1,5 @@
 /**
- * @input:    Im2ccConfig (allowedUserIds)
+ * @input:    CcConfig (allowedUserIds)
  * @output:   isUserAllowed(), isValidSessionName(), expandPath(), validatePath() — 用户身份校验、session 名称校验、路径展开与存在性校验
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -7,9 +7,9 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import type { Im2ccConfig } from './config.js'
+import type { CcConfig } from './config.js'
 
-export function isUserAllowed(userId: string, config: Im2ccConfig): boolean {
+export function isUserAllowed(userId: string, config: CcConfig): boolean {
   if (config.allowedUserIds.length === 0) return true
   return config.allowedUserIds.includes(userId)
 }

@@ -7,8 +7,8 @@ import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const cliPath = path.join(rootDir, 'dist', 'bin', 'im2cc.js')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-security-'))
+const cliPath = path.join(rootDir, 'dist', 'bin', 'cc.js')
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-security-'))
 process.env.HOME = testHome
 
 const security = await import(path.join(rootDir, 'dist', 'src', 'security.js'))
@@ -18,7 +18,7 @@ const configMod = await import(path.join(rootDir, 'dist', 'src', 'config.js'))
 const registry = await import(path.join(rootDir, 'dist', 'src', 'registry.js'))
 
 function resetState() {
-  fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
+  fs.rmSync(path.join(testHome, '.cc'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, '.claude'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, 'Code'), { recursive: true, force: true })
   fs.rmSync(path.join(testHome, 'Elsewhere'), { recursive: true, force: true })
@@ -64,7 +64,7 @@ test('validatePath accepts any existing directory (no path-whitelist enforcement
   fs.mkdirSync(outside, { recursive: true })
 
   // 以前在白名单外会被拦；现在只要存在且是目录就放行。
-  // 访问范围由 AI 工具自身的 permission mode 决定，不在 im2cc 层面限制路径。
+  // 访问范围由 AI 工具自身的 permission mode 决定，不在 cc 层面限制路径。
   assert.equal(security.validatePath(root).valid, true)
   assert.equal(security.validatePath(child).valid, true)
   assert.equal(security.validatePath(outside).valid, true)
@@ -104,7 +104,7 @@ test('/fc rejects registered sessions whose cwd has been removed (clear error, n
   assert.doesNotMatch(output, /路径不在白名单内/)
 })
 
-test('im2cc connect to a session outside old whitelist no longer shows whitelist error', () => {
+test('cc connect to a session outside old whitelist no longer shows whitelist error', () => {
   resetState()
   const config = configForTests()
   configMod.saveConfig(config)

@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-index-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-index-'))
 process.env.HOME = testHome
 
 const commands = await import(path.join(rootDir, 'dist', 'src', 'commands.js'))

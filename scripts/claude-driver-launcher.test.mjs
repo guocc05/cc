@@ -12,7 +12,7 @@ function writeMockClaudeLauncher(scriptPath, logPath) {
   fs.writeFileSync(scriptPath, `#!/usr/bin/env node
 const fs = require('node:fs')
 const args = process.argv.slice(2)
-if (args[0] === '--im2cc-select-profile') {
+if (args[0] === '--cc-select-profile') {
   process.stdout.write('glm\\n')
   process.exit(0)
 }
@@ -39,12 +39,12 @@ process.stdout.write(JSON.stringify({
 }
 
 test('ClaudeDriver uses configured launcher and reuses stored profile for follow-up sends', () => {
-  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-claude-driver-'))
+  const tempHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-claude-driver-'))
   const launcherPath = path.join(tempHome, 'mock-claude-launcher')
   const logPath = path.join(tempHome, 'launcher.log')
   writeMockClaudeLauncher(launcherPath, logPath)
-  fs.mkdirSync(path.join(tempHome, '.im2cc'), { recursive: true })
-  fs.writeFileSync(path.join(tempHome, '.im2cc', 'config.json'), JSON.stringify({
+  fs.mkdirSync(path.join(tempHome, '.cc'), { recursive: true })
+  fs.writeFileSync(path.join(tempHome, '.cc', 'config.json'), JSON.stringify({
     feishu: { appId: '', appSecret: '' },
     claudeLauncher: '',
   }))

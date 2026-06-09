@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
-const cliPath = path.join(rootDir, 'dist', 'bin', 'im2cc.js')
+const cliPath = path.join(rootDir, 'dist', 'bin', 'cc.js')
 
 test('cli help reflects focused support matrix', () => {
   const stdout = execFileSync('node', [cliPath], {
@@ -32,10 +32,10 @@ test('explicit cli help exposes unified command guide', () => {
     encoding: 'utf-8',
   })
 
-  assert.match(stdout, /📖 im2cc 帮助/)
+  assert.match(stdout, /📖 cc 帮助/)
   assert.match(stdout, /fhelp\s+— 查看帮助/)
-  assert.match(stdout, /im2cc onboard\s+— 查看首次安装引导/)
-  assert.match(stdout, /im2cc update\s+— 更新到最新版本/)
+  assert.match(stdout, /cc onboard\s+— 查看首次安装引导/)
+  assert.match(stdout, /cc update\s+— 更新到最新版本/)
   assert.match(stdout, /fn-codex <名称>/)
   assert.match(stdout, /\/fhelp\s+— 查看帮助/)
   assert.match(stdout, /飞书支持发送图片或文件/)
@@ -50,6 +50,6 @@ test('onboard prints phased guidance', () => {
 
   assert.match(stdout, /Phase 1: First Success/)
   assert.match(stdout, /Phase 2: Make It Stick/)
-  assert.match(stdout, /im2cc doctor/)
-  assert.match(stdout, /im2cc help/)
+  assert.match(stdout, /cc doctor/)
+  assert.match(stdout, /cc help/)
 })

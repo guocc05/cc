@@ -10,6 +10,7 @@ import crypto from 'node:crypto'
 import type { ToolDriver, ToolId, ToolCapabilities, CreateSessionOptions, CreateSessionResult, SendMessageOptions, SessionFileStatus } from './tool-driver.js'
 import type { RecapTurn } from './recap.js'
 import { tmuxExactTarget } from './tmux-util.js'
+import { findProcesses, killProcess, killProcessGroup, isTmuxAvailable } from './process-utils.js'
 
 /**
  * 细粒度 turn 事件：driver 把 stream-json 拆解后通知 daemon（@20260512-im-tool-call-progress）
@@ -76,21 +77,31 @@ export abstract class BaseToolDriver implements ToolDriver {
     return null
   }
 
-  /** 通用：杀掉 tmux 中的本地 session */
+  /** 通用：杀掉本地 session（跨平台） */
   killLocalSession(sessionName: string, tool?: ToolId): boolean {
     const t = tool ?? this.id
-    const tmuxNames = [`im2cc-${t}-${sessionName}`, `im2cc-${sessionName}`]
-    for (const tmuxSession of tmuxNames) {
-      try {
-        execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
-        execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
-        return true
-      } catch { /* 不存在 */ }
+
+    // Unix: 先尝试 tmux
+    if (isTmuxAvailable()) {
+      const tmuxNames = [`cc-${t}-${sessionName}`, `cc-${sessionName}`]
+      for (const tmuxSession of tmuxNames) {
+        try {
+          execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
+          execFileSync('tmux', ['kill-session', '-t', tmuxExactTarget(tmuxSession)], { stdio: 'ignore' })
+          return true
+        } catch { /* 不存在 */ }
+      }
     }
 
-    // fallback：通过进程名匹配
+    // 跨平台 fallback：通过进程模式匹配
+    // 同步版本用于快速检查
+    if (process.platform === 'win32') {
+      return this.killLocalSessionWindows(sessionName, t)
+    }
+
+    // Unix pgrep fallback
     try {
-      const result = execFileSync('pgrep', ['-f', `${this.id}.*${sessionName}`], { encoding: 'utf-8' }).trim()
+      const result = execFileSync('pgrep', ['-f', `${t}.*${sessionName}`], { encoding: 'utf-8' }).trim()
       if (!result) return false
       const pids = result.split('\n').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n !== process.pid)
       for (const pid of pids) {
@@ -100,10 +111,58 @@ export abstract class BaseToolDriver implements ToolDriver {
     } catch { return false }
   }
 
-  /** 通用：中断进程（SIGINT → SIGTERM → SIGKILL） */
+  /** Windows 特定的进程终止 */
+  private killLocalSessionWindows(sessionName: string, tool: ToolId): boolean {
+    // Windows 下使用 wmic 查找并终止进程
+    try {
+      const pattern = `${tool}.*${sessionName}`
+      const output = execFileSync(
+        'wmic',
+        ['process', 'where', `commandline like '%${pattern}%'`, 'get', 'processid'],
+        { encoding: 'utf-8', timeout: 10000 }
+      ).trim()
+
+      const lines = output.split('\n').slice(1) // 跳过标题
+      const pids: number[] = []
+
+      for (const line of lines) {
+        const pid = parseInt(line.trim(), 10)
+        if (Number.isInteger(pid) && pid > 0 && pid !== process.pid) {
+          pids.push(pid)
+        }
+      }
+
+      for (const pid of pids) {
+        try {
+          execFileSync('taskkill', ['/f', '/pid', String(pid)], { stdio: 'ignore' })
+        } catch {
+          // 忽略错误
+        }
+      }
+
+      return pids.length > 0
+    } catch {
+      return false
+    }
+  }
+
+  /** 通用：中断进程（跨平台） */
   async interrupt(child: ChildProcess): Promise<void> {
     if (!child.pid || child.exitCode !== null) return
     const pid = child.pid
+
+    // Windows 不支持进程组和信号
+    if (process.platform === 'win32') {
+      try {
+        execFileSync('taskkill', ['/f', '/t', '/pid', String(pid)], { stdio: 'ignore' })
+      } catch {
+        // 忽略错误
+      }
+      await waitOrTimeout(child, 2000)
+      return
+    }
+
+    // Unix: SIGINT → SIGTERM → SIGKILL
     const killGroup = (signal: NodeJS.Signals) => {
       try { process.kill(-pid, signal) } catch {}
     }
@@ -124,7 +183,8 @@ export abstract class BaseToolDriver implements ToolDriver {
   /** 通用：检查工具是否安装 */
   protected checkInstalled(cmd: string): boolean {
     try {
-      execFileSync('which', [cmd], { stdio: 'ignore' })
+      const locator = process.platform === 'win32' ? 'where' : 'which'
+      execFileSync(locator, [cmd], { stdio: 'ignore' })
       return true
     } catch { return false }
   }
@@ -146,12 +206,14 @@ export abstract class BaseToolDriver implements ToolDriver {
         cwd: opts.cwd,
         env: opts.env,
         stdio: ['ignore', 'pipe', 'pipe'],
-        detached: true,
+        detached: process.platform !== 'win32',
+        shell: process.platform === 'win32',
       })
 
       opts.onSpawn?.(child)
 
       let stdout = ''
+      let rawStdout = ''
       let stderr = ''
       const turnTexts: string[] = []
       const resultParts: string[] = []
@@ -197,7 +259,9 @@ export abstract class BaseToolDriver implements ToolDriver {
       }
 
       child.stdout?.on('data', (chunk: Buffer) => {
-        stdout += chunk.toString()
+        const chunkText = chunk.toString()
+        rawStdout += chunkText
+        stdout += chunkText
         const lines = stdout.split('\n')
         stdout = lines.pop() ?? ''
         for (const line of lines) {
@@ -226,21 +290,50 @@ export abstract class BaseToolDriver implements ToolDriver {
         const resultText = turnTexts.length > 0
           ? turnTexts.join('\n\n---\n\n')
           : resultParts.join('\n\n---\n\n')
+        const recoveredResult = !resultText
+          ? recoverResultFromRawStdout(rawStdout, extractText, extractResult)
+          : ''
+        const finalResultText = resultText || recoveredResult
         const stderrText = stderr.trim()
         const trailingFailure = detectedFailure
-          ?? detectToolFailure(opts.cmd, null, [stderrText, resultText].filter(Boolean))
+          ?? detectToolFailure(opts.cmd, null, [stderrText, finalResultText].filter(Boolean))
 
         if (trailingFailure) {
           reject(new Error(trailingFailure.userMessage))
         } else if (code === 0) {
-          resolve(resultText || '(无输出)')
+          resolve(finalResultText || '(无输出)')
         } else {
-          const detail = (stderrText || resultText).slice(0, 500)
+          const detail = (stderrText || finalResultText).slice(0, 500)
           reject(new Error(detail ? `${opts.cmd} 退出码 ${code}: ${detail}` : `${opts.cmd} 退出码 ${code}`))
         }
       })
     })
   }
+}
+
+function recoverResultFromRawStdout(
+  rawStdout: string,
+  extractText: (event: Record<string, unknown>) => string,
+  extractResult: (event: Record<string, unknown>) => string,
+): string {
+  if (!rawStdout.trim()) return ''
+  const recoveredTexts: string[] = []
+  const recoveredResults: string[] = []
+  for (const line of rawStdout.split('\n')) {
+    if (!line.trim()) continue
+    try {
+      const event = JSON.parse(line) as Record<string, unknown>
+      const text = extractText(event).trim()
+      const result = extractResult(event).trim()
+      if (text) recoveredTexts.push(text)
+      if (result) recoveredResults.push(result)
+    } catch {
+      // ignore malformed line
+    }
+  }
+  if (recoveredTexts.length > 0) return recoveredTexts.join('\n\n---\n\n')
+  if (recoveredResults.length > 0) return recoveredResults.join('\n\n---\n\n')
+  return ''
 }
 
 // --- 通用辅助函数 ---
@@ -265,10 +358,19 @@ function waitOrTimeout(child: ChildProcess, ms: number): Promise<void> {
 function defaultExtractText(event: Record<string, unknown>): string {
   if (event.type === 'assistant') {
     const msg = event.message as Record<string, unknown> | undefined
-    if (!msg || !Array.isArray(msg.content)) return ''
+    if (!msg) return ''
+    const content = msg.content
+    if (typeof content === 'string') return content
+    if (!Array.isArray(content)) return ''
     const texts: string[] = []
-    for (const block of msg.content as Array<Record<string, unknown>>) {
-      if (block.type === 'text' && typeof block.text === 'string') texts.push(block.text)
+    for (const block of content as Array<Record<string, unknown>>) {
+      if (block.type === 'text' && typeof block.text === 'string') {
+        texts.push(block.text)
+        continue
+      }
+      if (typeof block.text === 'string') {
+        texts.push(block.text)
+      }
     }
     return texts.join('')
   }

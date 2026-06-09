@@ -1,5 +1,5 @@
 /**
- * @input:    Im2ccConfig.claudeLauncher, Claude session/profile 上下文, askUserQuestion 桥接信息（sessionId/conversationId）
+ * @input:    CcConfig.claudeLauncher, Claude session/profile 上下文, askUserQuestion 桥接信息（sessionId/conversationId）
  * @output:   Claude 启动器解析、profile 选择 + injectAskUserHookSettings (PreToolUse hook 配置注入)
  * @rule:     如本文件 @input 或 @output 发生变化，必须更新本注释并检查 _INDEX.md
  */
@@ -13,7 +13,7 @@ import {
   getAskUserSocketPath,
   getAskUserTimeoutMinutes,
   getSessionDir,
-  type Im2ccConfig,
+  type CcConfig,
 } from './config.js'
 import { log } from './logger.js'
 
@@ -24,7 +24,7 @@ export interface ClaudeLauncherContext {
   profile?: string
 }
 
-function resolveConfig(config?: Im2ccConfig): Im2ccConfig {
+function resolveConfig(config?: CcConfig): CcConfig {
   return config ?? loadConfig()
 }
 
@@ -40,17 +40,17 @@ function expandHome(rawPath: string): string {
   return rawPath
 }
 
-export function getClaudeLauncher(config?: Im2ccConfig): string {
+export function getClaudeLauncher(config?: CcConfig): string {
   const custom = envLauncherOverride() ?? resolveConfig(config).claudeLauncher?.trim()
   if (!custom || custom === 'claude') return 'claude'
   return path.resolve(expandHome(custom))
 }
 
-export function hasCustomClaudeLauncher(config?: Im2ccConfig): boolean {
+export function hasCustomClaudeLauncher(config?: CcConfig): boolean {
   return getClaudeLauncher(config) !== 'claude'
 }
 
-export function assertClaudeLauncherAvailable(config?: Im2ccConfig): void {
+export function assertClaudeLauncherAvailable(config?: CcConfig): void {
   if (!hasCustomClaudeLauncher(config)) return
   const launcher = getClaudeLauncher(config)
   if (!fs.existsSync(launcher)) {
@@ -61,7 +61,7 @@ export function assertClaudeLauncherAvailable(config?: Im2ccConfig): void {
 
 export function buildClaudeLauncherEnv(
   context: ClaudeLauncherContext,
-  config?: Im2ccConfig,
+  config?: CcConfig,
 ): NodeJS.ProcessEnv | undefined {
   if (!hasCustomClaudeLauncher(config)) return undefined
 
@@ -76,7 +76,7 @@ export function buildClaudeLauncherEnv(
 export function buildClaudeInteractiveCommand(
   args: string[],
   context: ClaudeLauncherContext,
-  config?: Im2ccConfig,
+  config?: CcConfig,
 ): string[] {
   const launcher = getClaudeLauncher(config)
   if (!hasCustomClaudeLauncher(config)) return [launcher, ...args]
@@ -110,7 +110,7 @@ export interface AskUserHookInjection {
 }
 
 /**
- * 在 ~/.im2cc/sessions/<sessionId>/settings.json 写入临时配置：
+ * 在 ~/.cc/sessions/<sessionId>/settings.json 写入临时配置：
  * - PreToolUse hook 拦截 AskUserQuestion 调用
  * - 通过 unix socket 与 daemon askuser-bridge 通信
  *
@@ -172,14 +172,14 @@ export function injectAskUserHookSettings(opts: {
 export function selectClaudeProfile(
   cwd: string,
   sessionName: string,
-  config?: Im2ccConfig,
+  config?: CcConfig,
 ): string | undefined {
   if (!hasCustomClaudeLauncher(config)) return undefined
 
   assertClaudeLauncherAvailable(config)
   const launcher = getClaudeLauncher(config)
 
-  const stdout = execFileSync(launcher, ['--im2cc-select-profile'], {
+  const stdout = execFileSync(launcher, ['--cc-select-profile'], {
     cwd,
     encoding: 'utf-8',
     stdio: ['inherit', 'pipe', 'inherit'],

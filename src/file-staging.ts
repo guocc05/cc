@@ -64,7 +64,7 @@ export function consumeStaged(chatId: string): StagedFile[] | null {
 
 /** 确保 inbox 目录存在，返回绝对路径 */
 export function ensureInbox(cwd: string): string {
-  const inbox = path.join(cwd, '.im2cc-inbox')
+  const inbox = path.join(cwd, '.cc-inbox')
   fs.mkdirSync(inbox, { recursive: true })
   const gitignore = path.join(inbox, '.gitignore')
   if (!fs.existsSync(gitignore)) {
@@ -102,7 +102,7 @@ export function runInboxCleanup(cwds: string[], ttlMinutes: number): void {
   const now = Date.now()
   const maxAge = ttlMinutes * 60 * 1000
   for (const cwd of cwds) {
-    const inbox = path.join(cwd, '.im2cc-inbox')
+    const inbox = path.join(cwd, '.cc-inbox')
     if (!fs.existsSync(inbox)) continue
     try {
       const files = fs.readdirSync(inbox)

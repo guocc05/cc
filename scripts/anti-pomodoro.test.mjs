@@ -6,18 +6,18 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'im2cc-anti-pomodoro-'))
+const testHome = fs.mkdtempSync(path.join(os.tmpdir(), 'cc-anti-pomodoro-'))
 process.env.HOME = testHome
 
 const antiPomodoro = await import(path.join(rootDir, 'dist', 'src', 'anti-pomodoro.js'))
 
 function resetState() {
-  fs.rmSync(path.join(testHome, '.im2cc'), { recursive: true, force: true })
+  fs.rmSync(path.join(testHome, '.cc'), { recursive: true, force: true })
 }
 
 function readPersistedState() {
   return JSON.parse(
-    fs.readFileSync(path.join(testHome, '.im2cc', 'data', 'anti-pomodoro.json'), 'utf-8'),
+    fs.readFileSync(path.join(testHome, '.cc', 'data', 'anti-pomodoro.json'), 'utf-8'),
   )
 }
 

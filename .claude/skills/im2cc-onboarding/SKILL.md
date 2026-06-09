@@ -1,9 +1,9 @@
 ---
-name: im2cc-onboarding
-description: "Complete the full im2cc onboarding journey: install via npm, connect Feishu or WeChat, call $create-feishu-bot when needed, validate the mobile command path, create the first real session, and enable auto-start. Use when the user asks to install, configure, continue, repair, or validate im2cc."
+name: cc-onboarding
+description: "Complete the full cc onboarding journey: install via npm, connect Feishu or WeChat, call $create-feishu-bot when needed, validate the mobile command path, create the first real session, and enable auto-start. Use when the user asks to install, configure, continue, repair, or validate cc."
 ---
 
-# im2cc Onboarding
+# cc Onboarding
 
 Run this skill for zero-to-one setup and first-run success.
 
@@ -12,15 +12,15 @@ Run this skill for zero-to-one setup and first-run success.
 Default to npm global install:
 
 ```bash
-npm i -g im2cc
-im2cc onboard
+npm i -g cc
+cc onboard
 ```
 
 - If npm reports permission issues on `/usr/local`, set `npm config set prefix ~/.npm-global` and add `~/.npm-global/bin` to `$PATH`, then retry.
 - If the npm package is not yet published (404), fall back to source bootstrap:
   ```bash
-  git clone https://github.com/JVever/im2cc.git && cd im2cc && bash install.sh
-  im2cc install-shell && im2cc install-hook && im2cc onboard
+  git clone https://github.com/JVever/cc.git && cd cc && bash install.sh
+  cc install-shell && cc install-hook && cc onboard
   ```
 - Do not require `gh auth login` or authenticated GitHub APIs.
 
@@ -61,10 +61,10 @@ Read `references/state-machine.md` for transitions and recovery behavior.
 
 Inspect:
 
-- whether `im2cc` is available on PATH
+- whether `cc` is available on PATH
 - whether Node.js, tmux, and at least one supported AI CLI are available
 - whether the repo has been built
-- whether `~/.im2cc/config.json` exists
+- whether `~/.cc/config.json` exists
 - whether WeChat is already bound
 - whether Feishu credentials exist and appear valid
 
@@ -74,11 +74,11 @@ Read `references/install-flow.md` before making changes.
 
 If base installation is incomplete:
 
-- `npm i -g im2cc` (primary path)
-- `im2cc install-shell` (writes fn/fc/fl to `~/.zshrc`; idempotent)
-- `im2cc install-hook` (writes Claude SessionStart hook to `~/.claude/settings.json`; idempotent)
+- `npm i -g cc` (primary path)
+- `cc install-shell` (writes fn/fc/fl to `~/.zshrc`; idempotent)
+- `cc install-hook` (writes Claude SessionStart hook to `~/.claude/settings.json`; idempotent)
 
-`im2cc onboard` calls install-shell / install-hook automatically the first time, so after `npm i -g im2cc` you only need to run `im2cc onboard`.
+`cc onboard` calls install-shell / install-hook automatically the first time, so after `npm i -g cc` you only need to run `cc onboard`.
 
 ### 3. Select the channel
 
@@ -96,7 +96,7 @@ If Feishu is selected:
 - reuse existing credentials if valid
 - otherwise ask whether the user already has a reusable Feishu bot
 - if not, call `$create-feishu-bot`
-- persist the returned `app_id` and `app_secret` into `~/.im2cc/config.json`
+- persist the returned `app_id` and `app_secret` into `~/.cc/config.json`
 
 Read `references/feishu-branch.md`.
 
@@ -112,8 +112,8 @@ Read `references/wechat-branch.md`.
 
 After channel setup:
 
-- run `im2cc start`
-- run `im2cc doctor`
+- run `cc start`
+- run `cc doctor`
 - ask the user to send `/fhelp` or `/fl` from IM
 
 This validates message ingress and reply, but it does not yet prove real session flow.
@@ -137,7 +137,7 @@ Once the real session flow works:
 
 - ask whether the user wants auto-start enabled
 - if yes, install and load the macOS LaunchAgent
-- verify with `im2cc status` or `im2cc doctor`
+- verify with `cc status` or `cc doctor`
 
 ## Minimal user interruptions
 
@@ -154,7 +154,7 @@ Interrupt the user only for:
 
 Do not mark onboarding complete until all applicable checks pass:
 
-- `im2cc doctor`
+- `cc doctor`
 - IM responds to `/fhelp` or `/fl`
 - one real session exists
 - `/fc <name>` works from IM
