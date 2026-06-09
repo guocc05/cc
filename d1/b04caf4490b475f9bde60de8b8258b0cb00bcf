@@ -1,0 +1,57 @@
+src/claude-driver.ts
+  s_136c3dffedf10e::t_19e5baf4fbb97c 38,53
+src/_INDEX.md
+  s_f698960df87be8::t_e44626c1a4fa1f 9-10
+src/tool-compat.ts
+  s_136c3dffedf10e::t_f17ea036d8bbb3 31
+src/process-utils.ts
+  s_f698960df87be8::t_aa12306717bab6 1-338
+package.json
+  s_136c3dffedf10e::t_2f1f048978da4b 22-23
+src/status.ts
+  s_136c3dffedf10e::t_c08d859b0e3c8c 221-240,242
+src/feishu.ts
+  s_136c3dffedf10e::t_1ad36a83b9c9cb 59-78,94,97,209,217
+scripts/process-utils.test.mjs
+  s_f698960df87be8::t_ecfacac25fa143 1-73
+src/daemon-process.ts
+  s_f698960df87be8::t_f6f5834c0c10be 54,57-61,63-83,85-94,96,100-104,106-109,112-113,115-120,123,135-139,141-146,150-179,185-241,245,253,256-268,279
+  s_f698960df87be8::t_dafd2f10c405cb 2-3,11,13-14,17,45-50
+src/index.ts
+  s_136c3dffedf10e::t_b5d3f6e9c26718 145-149,742-743,747-751
+  s_f698960df87be8::t_a29b2d3ae8f3a7 17
+  s_f698960df87be8::t_c2c9b563c397cd 83,87-96,125-144
+src/base-driver.ts
+  s_136c3dffedf10e::t_d99b51c56bbdfa 361-364,366-373
+  s_f698960df87be8::t_287bc52dbc8a22 13
+  s_f698960df87be8::t_3e6d412c2f7a01 149,153-165
+  s_136c3dffedf10e::t_976717e78f2b4d 210
+  s_f698960df87be8::t_8d67e0d60ef6e2 80,83-99,102,104,114-146
+  s_136c3dffedf10e::t_e9c0b8edfe29b4 216,262-264,293-296,299,304,306,314-336
+  s_136c3dffedf10e::t_5e544dfc470222 147-148,186-187,337-338
+  s_136c3dffedf10e::t_17320b7e08839b 209
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.6",
+  "base_commit_sha": "d1b04caf4490b475f9bde60de8b8258b0cb00bcf",
+  "prompts": {},
+  "sessions": {
+    "s_136c3dffedf10e": {
+      "agent_id": {
+        "tool": "cursor",
+        "id": "9048d656-205a-4cf4-bfb3-774bb8705110",
+        "model": "gpt-5.3-codex"
+      },
+      "human_author": "kyrie.guo <kyrie.guo@jtexpress.com>"
+    },
+    "s_f698960df87be8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "da51b206-4879-4405-b69b-89c0cd33e2e0",
+        "model": "astron-code-latest"
+      },
+      "human_author": "kyrie.guo <kyrie.guo@jtexpress.com>"
+    }
+  }
+}
