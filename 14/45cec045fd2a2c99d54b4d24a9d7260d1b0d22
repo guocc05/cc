@@ -1,0 +1,49 @@
+src/index.ts
+  s_8b5c08f1f27575::t_379ffa91c262b0 298-310
+  s_8b5c08f1f27575::t_9ace7e4c2b66ba 10,28,66-68
+  s_8b5c08f1f27575::t_acf7ac35be01de 449-456
+  s_8b5c08f1f27575::t_ebe2c12d260603 367-370,375,386-396
+src/base-driver.ts
+  s_8b5c08f1f27575::t_5afadddee31ea6 209,214-227
+  s_8b5c08f1f27575::t_0e6a2f59da461a 285-301
+  s_8b5c08f1f27575::t_f011a52de09e4c 311-318
+src/security.ts
+  s_8b5c08f1f27575::t_be9d9be8e91073 13-17,81
+  s_8b5c08f1f27575::t_58041519e5e4bd 44-45,48,67-80
+src/config.ts
+  s_8b5c08f1f27575::t_017b72cd4f69e0 243
+src/file-type-check.ts
+  s_8b5c08f1f27575::t_82ef6ac83ecd97 1-243
+src/rate-limiter.ts
+  s_8b5c08f1f27575::t_7bea244108de06 1-141
+src/config-cache.ts
+  s_8b5c08f1f27575::t_01d10bf307f492 1-146
+src/feishu.ts
+  s_8b5c08f1f27575::t_d4192fa7b9dfb5 116-120,127-144,146-149,153
+src/queue.ts
+  s_8b5c08f1f27575::t_c5f9a65c471cd3 240-242,245-247
+  s_8b5c08f1f27575::t_0c29d95cf81214 162-169
+  s_8b5c08f1f27575::t_b8a2429806f154 154-157
+  s_8b5c08f1f27575::t_3a90f6290a912c 382,384-385
+  s_8b5c08f1f27575::t_3329ed8bf938da 416-420,423
+src/logger.ts
+  s_8b5c08f1f27575::t_f427dba8d33a2a 13-15,30-32,34,37,40-45,50-52,59-62,64-67,69-72,77-83,85-91
+  s_8b5c08f1f27575::t_4621ae347adf3f 3
+  s_8b5c08f1f27575::t_f18afa7bb508be 33
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "1445cec045fd2a2c99d54b4d24a9d7260d1b0d22",
+  "prompts": {},
+  "sessions": {
+    "s_8b5c08f1f27575": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "817a3d74-d72a-4898-b27b-11fc146614b8",
+        "model": "astron-code-latest"
+      },
+      "human_author": "kyrie.guo <kyrie.guo@jtexpress.com>"
+    }
+  }
+}
