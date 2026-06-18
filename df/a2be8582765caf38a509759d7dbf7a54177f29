@@ -1,0 +1,65 @@
+src/daemon-process.ts
+  s_93536760116c9f::t_9a00fd6f41a626 12
+  s_93536760116c9f::t_b7eb227b9a1007 305
+  s_93536760116c9f::t_2041d12023c7bc 271,284,289
+  s_93536760116c9f::t_1287c7dbd4262b 323
+src/askuser-bridge.ts
+  s_93536760116c9f::t_61bd582e1792f7 87,92,97
+  s_93536760116c9f::t_a806fddab0e24e 75
+  s_93536760116c9f::t_f75eda9a00f461 65
+scripts/config-cache.test.mjs
+  s_93536760116c9f::t_347d2ee63707d9 1-14,16-237
+  s_93536760116c9f::t_9dddaf55c05d53 15
+scripts/rate-limiter.test.mjs
+  s_93536760116c9f::t_6de2e55ff4194a 1-156
+src/queue.ts
+  s_93536760116c9f::t_73c94cdf10bf19 556
+  s_93536760116c9f::t_69c32f203d4761 283,301
+  s_93536760116c9f::t_3a829e6daa1f9a 586
+  s_93536760116c9f::t_2dd9a21b4264b8 203-205
+  s_93536760116c9f::t_991fed55a050fd 232-234
+  s_93536760116c9f::t_f796e2bde6c27e 649,651,666-669
+  s_93536760116c9f::t_7f628f14115150 91
+  s_93536760116c9f::t_a8ad36d1899d3f 598-599,615-616
+src/index.ts
+  s_93536760116c9f::t_9205f706df4cbf 241,246,249
+  s_93536760116c9f::t_2c5c24229945d4 174,182
+  s_93536760116c9f::t_7ae9951fefec43 308-309,319
+  s_93536760116c9f::t_d79bac3a9df2ad 105
+  s_93536760116c9f::t_4b7d1ed85b3b94 791
+src/base-driver.ts
+  s_93536760116c9f::t_1f0af39c72c9de 274
+  s_93536760116c9f::t_108517a0e1f946 109
+  s_93536760116c9f::t_7efeadd622c874 14
+  s_93536760116c9f::t_2957a061a365f6 168
+  s_93536760116c9f::t_7c6f0fdff28d85 222
+src/session.ts
+  s_93536760116c9f::t_87ad7850b22b3f 13
+  s_93536760116c9f::t_a180f2f34d4643 206
+  s_93536760116c9f::t_ce35e5fb1b6f04 182
+  s_93536760116c9f::t_2781a0cdf40a5a 223-225
+src/claude-driver.ts
+  s_93536760116c9f::t_438d162e8d7d1b 171
+scripts/file-type-check.test.mjs
+  s_93536760116c9f::t_3b67d1f222ddd6 22
+  s_93536760116c9f::t_110432388e934c 15
+  s_93536760116c9f::t_afd837520b563a 158-159,164-165,172,179-180
+  s_93536760116c9f::t_4fa44bb255bc3a 75-76,81-82
+  s_93536760116c9f::t_d75e7276d3795a 1-14,16-21,23-74,77-80,83-157,160-163,166-171,173-178,181-204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "dfa2be8582765caf38a509759d7dbf7a54177f29",
+  "prompts": {},
+  "sessions": {
+    "s_93536760116c9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51499c06-3b9a-401d-8915-4224f2c846a8",
+        "model": "astron-code-latest"
+      },
+      "human_author": "kyrie.guo <kyrie.guo@jtexpress.com>"
+    }
+  }
+}
