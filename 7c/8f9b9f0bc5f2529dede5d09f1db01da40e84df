@@ -1,0 +1,25 @@
+scripts/mode-policy.test.mjs
+  s_93536760116c9f::t_441547e9991ef0 3,7
+scripts/schedule-parser.test.mjs
+  s_93536760116c9f::t_a57ec20f8afc24 3,7
+scripts/support-policy.test.mjs
+  s_93536760116c9f::t_f8ff10fa2030a5 4,8
+scripts/turn-aggregator.test.mjs
+  s_93536760116c9f::t_11c6e4ea3c8198 11,15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.8",
+  "base_commit_sha": "7c8f9b9f0bc5f2529dede5d09f1db01da40e84df",
+  "prompts": {},
+  "sessions": {
+    "s_93536760116c9f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51499c06-3b9a-401d-8915-4224f2c846a8",
+        "model": "astron-code-latest"
+      },
+      "human_author": "kyrie.guo <kyrie.guo@jtexpress.com>"
+    }
+  }
+}
