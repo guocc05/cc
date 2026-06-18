@@ -1,11 +1,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
-const supportPolicyModulePath = path.join(rootDir, 'dist', 'src', 'support-policy.js')
+const supportPolicyModulePath = pathToFileURL(path.join(rootDir, 'dist', 'src', 'support-policy.js')).href
 
 test('support policy exposes focused core matrix and gemini best-effort', async () => {
   const {

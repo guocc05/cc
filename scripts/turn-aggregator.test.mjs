@@ -8,11 +8,11 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const rootDir = path.resolve(__dirname, '..')
-const modulePath = path.join(rootDir, 'dist', 'src', 'turn-aggregator.js')
+const modulePath = pathToFileURL(path.join(rootDir, 'dist', 'src', 'turn-aggregator.js')).href
 
 /** 模拟同步 setTimeout: 立即记录但不执行,手动 advance */
 function makeFakeTimers() {

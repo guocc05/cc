@@ -1,10 +1,10 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import path from 'node:path'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-const mp = await import(path.join(rootDir, 'dist', 'src', 'mode-policy.js'))
+const mp = await import(pathToFileURL(path.join(rootDir, 'dist', 'src', 'mode-policy.js')).href)
 
 test('each tool has at least one mode with valid cliArgs', () => {
   for (const tool of ['claude', 'codex', 'gemini']) {
