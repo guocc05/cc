@@ -9,6 +9,7 @@ import path from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { getPidFile, getDaemonLockDir } from './config.js'
 import { findProcesses, isProcessRunning, killProcess, type ProcessInfo } from './process-utils.js'
+import { log } from './logger.js'
 
 export const DAEMON_MARKER = 'cc-daemon'
 export const DAEMON_PROCESS_TITLE = 'cc-daemon'
@@ -267,7 +268,7 @@ export function killAllDaemonProcesses(
 
   // Unix: Phase 1: SIGTERM
   for (const pid of pids) {
-    try { process.kill(pid, 'SIGTERM') } catch {}
+    try { process.kill(pid, 'SIGTERM') } catch (err) { log(`[daemon-process] SIGTERM pid ${pid} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   // Phase 2: wait and verify
@@ -280,12 +281,12 @@ export function killAllDaemonProcesses(
     }
     if (survivors.length === 0) break
     // busy-wait with short sleep (synchronous, acceptable during startup)
-    try { execFileSync('sleep', ['0.2'], { stdio: 'ignore' }) } catch {}
+    try { execFileSync('sleep', ['0.2'], { stdio: 'ignore' }) } catch (err) { /* sleep 失败不影响流程 */ }
   }
 
   // Phase 3: SIGKILL for survivors
   for (const pid of survivors) {
-    try { process.kill(pid, 'SIGKILL') } catch {}
+    try { process.kill(pid, 'SIGKILL') } catch (err) { log(`[daemon-process] SIGKILL pid ${pid} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   return pids
@@ -301,7 +302,7 @@ export function readDaemonPidRecord(): DaemonPidRecord {
       const raw = JSON.parse(fs.readFileSync(lockMetaFile, 'utf-8')) as Record<string, unknown>
       const pid = parsePositivePid(raw.pid)
       if (pid !== null) return { pid, present: true }
-    } catch {}
+    } catch (err) { log(`[daemon-process] 读取 lock meta 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   const pidFile = getPidFile()
@@ -319,7 +320,7 @@ export function readDaemonPidRecord(): DaemonPidRecord {
 export function prepareDaemonProcessIdentity(): void {
   try {
     process.title = DAEMON_PROCESS_TITLE
-  } catch {}
+  } catch (err) { log(`[daemon-process] 设置 process.title 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
 }
 
 export function isDaemonEntrypointInvocation(argv: string[], entryPath: string = daemonMainModulePath()): boolean {

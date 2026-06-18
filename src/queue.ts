@@ -88,7 +88,7 @@ function loadPending(): PendingEntry[] {
 
 function clearPending(): void {
   const file = getPendingFile()
-  try { fs.writeFileSync(file, '[]') } catch {}
+  try { fs.writeFileSync(file, '[]') } catch (err) { log(`[queue] 清空 pending 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
 }
 
 // --- 持久化：inflight 任务 ---
@@ -200,8 +200,9 @@ function pruneCompletedSnapshots(dir: string = getInflightDir()): void {
       if (!Number.isFinite(finishedAt) || finishedAt < cutoff) {
         fs.unlinkSync(filePath)
       }
-    } catch {
-      try { fs.unlinkSync(filePath) } catch {}
+    } catch (err) {
+      log(`[queue] 解析 completed snapshot 失败，尝试删除: ${err instanceof Error ? err.message : String(err)}`)
+      try { fs.unlinkSync(filePath) } catch (unlinkErr) { log(`[queue] 删除损坏的 snapshot 失败 (忽略): ${unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr)}`) }
     }
   }
 }
@@ -228,8 +229,9 @@ function saveCompletedInflightSnapshot(
   try {
     fs.writeFileSync(tmpPath, JSON.stringify(snapshot))
     fs.renameSync(tmpPath, filePath)
-  } catch {
-    try { fs.unlinkSync(tmpPath) } catch {}
+  } catch (err) {
+    log(`[queue] 保存 completed snapshot 失败: ${err instanceof Error ? err.message : String(err)}`)
+    try { fs.unlinkSync(tmpPath) } catch (unlinkErr) { log(`[queue] 删除临时 snapshot 文件失败 (忽略): ${unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr)}`) }
   }
 }
 
@@ -278,7 +280,7 @@ export function listInflightTasksForSession(sessionId: string, conversationId?: 
         outputText: readOutputText(outputPath),
         running: meta.pid ? isAlive(meta.pid) : true,
       })
-    } catch {}
+    } catch (err) { log(`[queue] 读取 inflight meta 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   return tasks.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt))
@@ -296,7 +298,7 @@ export function listCompletedInflightSnapshotsForSession(sessionId: string, conv
       if (snapshot.sessionId !== sessionId) continue
       if (conversationId && snapshot.conversationId !== conversationId) continue
       snapshots.push(snapshot)
-    } catch {}
+    } catch (err) { log(`[queue] 读取 completed snapshot 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   return snapshots.sort((a, b) => Date.parse(a.finishedAt) - Date.parse(b.finishedAt))
@@ -551,7 +553,7 @@ export async function handleStop(conversationId: string): Promise<string> {
   // 优先取消挂起的 AskUserQuestion，让 hook 进程立即解除阻塞，
   // 避免 driver.interrupt 后 hook 因 socket 没收到信号而依赖硬超时
   if (binding) {
-    try { cancelAskUserBySessionId(binding.sessionId, 'user /stop') } catch {}
+    try { cancelAskUserBySessionId(binding.sessionId, 'user /stop') } catch (err) { log(`[queue] cancelAskUser 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
   const driver = binding ? getDriver(binding.tool ?? 'claude') : getDefaultDriver()
   await driver.interrupt(group.currentChild)
@@ -581,7 +583,7 @@ export async function recoverOnStartup(
 
       // 杀掉可能还在跑的孤儿进程
       if (meta.pid) {
-        try { process.kill(meta.pid, 'SIGTERM') } catch {}
+        try { process.kill(meta.pid, 'SIGTERM') } catch (err) { log(`[recovery] kill orphan pid ${meta.pid} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
       }
 
       let resultText = ''
@@ -593,8 +595,8 @@ export async function recoverOnStartup(
       const recoveryBinding = getBinding(meta.conversationId)
       if (!recoveryBinding || recoveryBinding.sessionId !== meta.sessionId) {
         log(`[recovery] 已丢弃 "${meta.text.slice(0, 30)}..." 的结果：远程连接已断开或已切换`)
-        try { fs.unlinkSync(path.join(dir, metaFile)) } catch {}
-        try { fs.unlinkSync(outputPath) } catch {}
+        try { fs.unlinkSync(path.join(dir, metaFile)) } catch (err) { log(`[recovery] 删除 meta 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
+        try { fs.unlinkSync(outputPath) } catch (err) { log(`[recovery] 删除 output 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
         continue
       }
       const recoveryTransport = recoveryBinding.transport ?? 'feishu' as const
@@ -610,8 +612,8 @@ export async function recoverOnStartup(
       }
 
       // 清理
-      try { fs.unlinkSync(path.join(dir, metaFile)) } catch {}
-      try { fs.unlinkSync(outputPath) } catch {}
+      try { fs.unlinkSync(path.join(dir, metaFile)) } catch (err) { log(`[recovery] 删除 meta 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
+      try { fs.unlinkSync(outputPath) } catch (err) { log(`[recovery] 删除 output 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
     } catch (err) {
       log(`[recovery] 处理 ${metaFile} 失败: ${err}`)
     }
@@ -644,8 +646,9 @@ export async function interruptInflightTasksForSession(sessionId: string, conver
   }
 
   for (const metaFile of metaFiles) {
+    let meta: InflightMeta | null = null
     try {
-      const meta: InflightMeta = JSON.parse(fs.readFileSync(path.join(dir, metaFile), 'utf-8'))
+      meta = JSON.parse(fs.readFileSync(path.join(dir, metaFile), 'utf-8')) as InflightMeta
       if (meta.sessionId !== sessionId) continue
       if (conversationId && meta.conversationId !== conversationId) continue
       if (!meta.pid || !isAlive(meta.pid)) continue
@@ -660,7 +663,10 @@ export async function interruptInflightTasksForSession(sessionId: string, conver
         sendSignalToPidGroup(meta.pid, 'SIGKILL')
       }
       interrupted += 1
-    } catch {}
+    } catch (err) {
+      const pidInfo = meta?.pid ?? 'unknown'
+      log(`[queue] 中断 inflight pid ${pidInfo} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`)
+    }
   }
 
   return interrupted

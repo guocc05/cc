@@ -62,7 +62,7 @@ export async function startAskUserBridge(): Promise<void> {
 
   // 清理上一次残留 socket（daemon 单实例已保证不会有活的对端在用）
   if (fs.existsSync(socketPath)) {
-    try { fs.unlinkSync(socketPath) } catch {}
+    try { fs.unlinkSync(socketPath) } catch (err) { log(`[askuser-bridge] 清理残留 socket 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   server = net.createServer((socket) => handleHookConnection(socket))
@@ -72,7 +72,7 @@ export async function startAskUserBridge(): Promise<void> {
     server!.once('error', reject)
     server!.listen(socketPath, () => {
       server!.off('error', reject)
-      try { fs.chmodSync(socketPath, 0o600) } catch {}
+      try { fs.chmodSync(socketPath, 0o600) } catch (err) { log(`[askuser-bridge] chmod socket 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
       log(`[askuser-bridge] listening on ${socketPath}`)
       resolve()
     })
@@ -84,17 +84,17 @@ export function stopAskUserBridge(): void {
   for (const state of pendingByToolUseId.values()) {
     sendToHook(state.hookSocket, { type: 'cancelled', toolUseId: state.toolUseId, reason: 'daemon shutting down' })
     clearTimeout(state.timer)
-    try { state.hookSocket.end() } catch {}
+    try { state.hookSocket.end() } catch (err) { log(`[askuser-bridge] 关闭 hook socket 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
   pendingByToolUseId.clear()
   pendingByCardId.clear()
   if (server) {
-    try { server.close() } catch {}
+    try { server.close() } catch (err) { log(`[askuser-bridge] 关闭 server 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
     server = null
   }
   const sockPath = getAskUserSocketPath()
   if (fs.existsSync(sockPath)) {
-    try { fs.unlinkSync(sockPath) } catch {}
+    try { fs.unlinkSync(sockPath) } catch (err) { log(`[askuser-bridge] 删除 socket 文件 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 }
 

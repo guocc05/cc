@@ -10,6 +10,7 @@ import crypto from 'node:crypto'
 import { getDataDir, getMessageDedupDir } from './config.js'
 import type { TransportType } from './transport.js'
 import type { ToolId } from './tool-driver.js'
+import { log } from './logger.js'
 
 export interface Binding {
   id: string
@@ -178,7 +179,7 @@ function readDedupTimestamp(filePath: string): number | null {
 function unlinkDedupFile(filePath: string): void {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath)
-  } catch {}
+  } catch (err) { log(`[session] 删除 dedup 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
 }
 
 function tryCreateDedupMarker(filePath: string, messageKey: string, timestamp: number): 'created' | 'duplicate' | 'retry' {
@@ -202,7 +203,7 @@ function tryCreateDedupMarker(filePath: string, messageKey: string, timestamp: n
     return 'retry'
   } finally {
     if (fd !== null) {
-      try { fs.closeSync(fd) } catch {}
+      try { fs.closeSync(fd) } catch (err) { log(`[session] 关闭 dedup 文件 fd 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
     }
   }
 }
@@ -219,8 +220,9 @@ function cleanupDedupFiles(): void {
         if (!isFreshTimestamp(raw.timestamp) || (raw.timestamp as number) < cutoff) {
           fs.unlinkSync(filePath)
         }
-      } catch {
-        try { fs.unlinkSync(filePath) } catch {}
+      } catch (err) {
+        log(`[session] 解析 dedup 文件失败，尝试删除: ${err instanceof Error ? err.message : String(err)}`)
+        try { fs.unlinkSync(filePath) } catch (unlinkErr) { log(`[session] 删除损坏的 dedup 文件失败 (忽略): ${unlinkErr instanceof Error ? unlinkErr.message : String(unlinkErr)}`) }
       }
     }
   } catch {

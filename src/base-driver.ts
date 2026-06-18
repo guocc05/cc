@@ -11,6 +11,7 @@ import type { ToolDriver, ToolId, ToolCapabilities, CreateSessionOptions, Create
 import type { RecapTurn } from './recap.js'
 import { tmuxExactTarget } from './tmux-util.js'
 import { findProcesses, killProcess, killProcessGroup, isTmuxAvailable } from './process-utils.js'
+import { log } from './logger.js'
 
 /**
  * 细粒度 turn 事件：driver 把 stream-json 拆解后通知 daemon（@20260512-im-tool-call-progress）
@@ -105,7 +106,7 @@ export abstract class BaseToolDriver implements ToolDriver {
       if (!result) return false
       const pids = result.split('\n').map(s => parseInt(s.trim())).filter(n => !isNaN(n) && n !== process.pid)
       for (const pid of pids) {
-        try { process.kill(pid, 'SIGTERM') } catch {}
+        try { process.kill(pid, 'SIGTERM') } catch (err) { log(`[base-driver] kill pid ${pid} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
       }
       return pids.length > 0
     } catch { return false }
@@ -164,7 +165,7 @@ export abstract class BaseToolDriver implements ToolDriver {
 
     // Unix: SIGINT → SIGTERM → SIGKILL
     const killGroup = (signal: NodeJS.Signals) => {
-      try { process.kill(-pid, signal) } catch {}
+      try { process.kill(-pid, signal) } catch (err) { log(`[base-driver] kill process group (-${pid}) with ${signal} 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
     }
     killGroup('SIGINT')
     await waitOrTimeout(child, 5000)
@@ -218,7 +219,7 @@ export abstract class BaseToolDriver implements ToolDriver {
         const exitHandler = () => {
           try {
             if (child.pid) process.kill(-child.pid, 'SIGTERM')
-          } catch {}
+          } catch (err) { /* 进程可能已退出，忽略 */ }
         }
         process.on('exit', exitHandler)
         child.once('exit', () => {
@@ -270,7 +271,7 @@ export abstract class BaseToolDriver implements ToolDriver {
         // 输出落盘
         const allText = turnTexts.length > 0 ? turnTexts.join('\n\n---\n\n') : resultParts.join('\n\n---\n\n')
         if (opts.outputFile && allText) {
-          try { fs.writeFileSync(opts.outputFile, allText) } catch {}
+          try { fs.writeFileSync(opts.outputFile, allText) } catch (err) { log(`[base-driver] 写入输出文件失败: ${err instanceof Error ? err.message : String(err)}`) }
         }
       }
 

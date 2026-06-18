@@ -168,7 +168,7 @@ export class ClaudeDriver extends BaseToolDriver {
         if (slug === expectedSlug) continue
         if (fs.existsSync(path.join(projectsDir, slug, `${sessionId}.jsonl`))) return 'elsewhere'
       }
-    } catch {}
+    } catch (err) { log(`[claude-driver] 检查 session 位置失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
 
     return 'missing'
   }

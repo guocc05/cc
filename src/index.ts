@@ -102,7 +102,7 @@ function isSessionLocallyActive(sessionName: string, tool: string = 'claude'): b
   try {
     execFileSync('tmux', ['has-session', '-t', tmuxExactTarget(newName)], { stdio: 'ignore' })
     return true
-  } catch {}
+  } catch { /* session 不存在 */ }
 
   // 旧格式：存在时需验证进程是否匹配预期工具
   const oldName = `cc-${sessionName}`
@@ -171,7 +171,7 @@ function acquireLock(): boolean {
       if (!fs.existsSync(pidFile)) return
       const ownerPid = parseInt(fs.readFileSync(pidFile, 'utf-8').trim(), 10)
       if (ownerPid === process.pid) fs.unlinkSync(pidFile)
-    } catch {}
+    } catch (err) { log(`[daemon-lock] 删除 PID 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   const removeLockIfOwned = () => {
@@ -179,7 +179,7 @@ function acquireLock(): boolean {
       if (!fs.existsSync(lockMetaFile)) return
       const raw = JSON.parse(fs.readFileSync(lockMetaFile, 'utf-8')) as Record<string, unknown>
       if (raw.pid === process.pid) fs.rmSync(lockDir, { recursive: true, force: true })
-    } catch {}
+    } catch (err) { log(`[daemon-lock] 删除 lock 目录失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   const cleanup = () => {
@@ -238,15 +238,15 @@ function acquireLock(): boolean {
       }
       const reason = daemonPidRecord.present ? '清理无效守护进程锁元数据' : '清理无主守护进程锁'
       log(reason)
-    } catch {}
+    } catch (err) { log(`[daemon-lock] 检查 lock mtime 失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   }
 
   try {
     fs.rmSync(lockDir, { recursive: true, force: true })
-  } catch {}
+  } catch (err) { log(`[daemon-lock] 删除 lock 目录失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
   try {
     fs.unlinkSync(pidFile)
-  } catch {}
+  } catch (err) { log(`[daemon-lock] 删除 PID 文件失败 (忽略): ${err instanceof Error ? err.message : String(err)}`) }
 
   if (tryAcquire()) return true
 
@@ -305,8 +305,8 @@ export async function startDaemon(): Promise<void> {
 
   // 清理钩子
   process.on('exit', () => {
-    try { stopConfigCache() } catch {}
-    try { stopRateLimiter() } catch {}
+    try { stopConfigCache() } catch (err) { /* 进程退出时日志可能不可用 */ }
+    try { stopRateLimiter() } catch (err) { /* 进程退出时日志可能不可用 */ }
   })
 
   // AskUserQuestion 桥接 — 必须在 transport 启动前就绪，避免 hook 早期连接失败
@@ -316,7 +316,7 @@ export async function startDaemon(): Promise<void> {
     error(`[askuser-bridge] 启动失败 (将影响 AI 反向提问能力): ${err}`)
   }
   process.on('exit', () => {
-    try { stopAskUserBridge() } catch {}
+    try { stopAskUserBridge() } catch (err) { /* 进程退出时日志可能不可用 */ }
   })
 
   const config = loadConfig()
@@ -788,7 +788,7 @@ export async function startDaemon(): Promise<void> {
     // 配合 bin/cc.ts:fcTraceLog 互补,准备下次复现时定位 [exited] 根因。
     startTmuxWatcher()
     process.on('exit', () => {
-      try { stopTmuxWatcher() } catch {}
+      try { stopTmuxWatcher() } catch (err) { /* 进程退出时日志可能不可用 */ }
     })
   }
 
