@@ -151,13 +151,22 @@ function updateInflightPid(id: string, pid: number): void {
     const meta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'))
     meta.pid = pid
     fs.writeFileSync(metaPath, JSON.stringify(meta))
-  } catch {}
+  } catch (err) {
+    // 记录错误而非静默吞掉
+    log(`[queue] updateInflightPid 失败 (id=${id}): ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function cleanupInflight(id: string): void {
   const dir = getInflightDir()
-  try { fs.unlinkSync(path.join(dir, `${id}.meta.json`)) } catch {}
-  try { fs.unlinkSync(path.join(dir, `${id}.output`)) } catch {}
+  const metaPath = path.join(dir, `${id}.meta.json`)
+  const outputPath = path.join(dir, `${id}.output`)
+  try { fs.unlinkSync(metaPath) } catch (err) {
+    log(`[queue] cleanupInflight meta 失败 (id=${id}): ${err instanceof Error ? err.message : String(err)}`)
+  }
+  try { fs.unlinkSync(outputPath) } catch (err) {
+    log(`[queue] cleanupInflight output 失败 (id=${id}): ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function readOutputText(filePath: string): string {
@@ -228,10 +237,14 @@ function sendSignalToPidGroup(pid: number, signal: NodeJS.Signals): void {
   try {
     process.kill(-pid, signal)
     return
-  } catch {}
+  } catch (err) {
+    log(`[queue] sendSignalToPidGroup (process group) 失败 pid=${pid}: ${err instanceof Error ? err.message : String(err)}`)
+  }
   try {
     process.kill(pid, signal)
-  } catch {}
+  } catch (err) {
+    log(`[queue] sendSignalToPidGroup (single process) 失败 pid=${pid}: ${err instanceof Error ? err.message : String(err)}`)
+  }
 }
 
 function isAlive(pid: number): boolean {
@@ -366,8 +379,10 @@ export function enqueue(
       .catch(err => error(`[queue] 排队提示发送失败 [${conversationId}]: ${err}`))
   }
 
-  // 如果空闲，立即处理
+  // 如果空闲，立即处理（使用原子性状态检查防止 race condition）
   if (group.state === 'idle') {
+    // 立即设置状态为 busy，防止并发调用 processNext
+    group.state = 'busy'
     processNext(conversationId, sendReply)
       .catch(catchProcessError(conversationId, 'processNext(enqueue-idle)'))
   }
@@ -398,8 +413,14 @@ async function processNext(
     return
   }
 
+  // 确保 state 为 busy（enqueue 已设置，但防御性检查）
+  if (group.state !== 'busy') {
+    group.state = 'busy'
+  }
+
   const binding = getBinding(conversationId)
   if (!binding) {
+    group.state = 'idle'  // 重置状态防止卡死
     msg.reject(new Error('该群未接入对话，请先 /fc <名称> 或 /fn <名称>'))
     processNext(conversationId, sendReply)
       .catch(catchProcessError(conversationId, 'processNext(no-binding)'))
@@ -409,7 +430,6 @@ async function processNext(
   const effectiveSessionId = msg.forkSessionId ?? binding.sessionId
   msg.expectedSessionId = effectiveSessionId
 
-  group.state = 'busy'
   log(`[${conversationId}] 开始执行${msg.forkSessionId ? '（/btw fork）' : ''}: ${msg.text.slice(0, 30)}...`)
 
   // 创建 inflight 记录（fork turn 用 fork sessionId 隔离,主 session 的 inflight 列表不被污染）

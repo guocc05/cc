@@ -10,7 +10,11 @@ import os from 'node:os'
 import type { CcConfig } from './config.js'
 
 export function isUserAllowed(userId: string, config: CcConfig): boolean {
-  if (config.allowedUserIds.length === 0) return true
+  // 安全默认：空数组表示拒绝所有人（必须显式配置用户 ID）
+  if (config.allowedUserIds.length === 0) {
+    console.warn('[security] allowedUserIds 为空，拒绝所有用户访问。请显式配置允许的用户 ID。')
+    return false
+  }
   return config.allowedUserIds.includes(userId)
 }
 
@@ -37,10 +41,11 @@ export interface PathValidationResult {
 
 /**
  * 验证路径：展开、解析 symlink、确认存在且是目录。
- * 不做"白名单"拦截 — 访问范围由 AI 工具自身的 permission mode 决定，
+ * 安全增强：可选检查路径是否在允许的工作目录范围内。
+ * 访问范围由 AI 工具自身的 permission mode 决定，
  * 而非由路径前缀决定（见 PROJECT.md 安全模型）。
  */
-export function validatePath(rawPath: string): PathValidationResult {
+export function validatePath(rawPath: string, allowedBasePaths?: string[]): PathValidationResult {
   const expanded = expandPath(rawPath)
 
   let resolved: string
@@ -57,6 +62,22 @@ export function validatePath(rawPath: string): PathValidationResult {
     }
   } catch {
     return { valid: false, resolvedPath: resolved, error: `无法访问: ${resolved}` }
+  }
+
+  // 安全增强：如果提供了白名单，检查路径是否在允许范围内
+  if (allowedBasePaths && allowedBasePaths.length > 0) {
+    const normalizedResolved = resolved.endsWith(path.sep) ? resolved : resolved + path.sep
+    const isAllowed = allowedBasePaths.some(allowed => {
+      const normalizedAllowed = allowed.endsWith(path.sep) ? allowed : allowed + path.sep
+      return normalizedResolved.startsWith(normalizedAllowed)
+    })
+    if (!isAllowed) {
+      return {
+        valid: false,
+        resolvedPath: resolved,
+        error: `路径不在允许的工作目录范围内: ${resolved}`,
+      }
+    }
   }
 
   return { valid: true, resolvedPath: resolved }

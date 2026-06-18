@@ -113,21 +113,44 @@ export class FeishuAdapter implements TransportAdapter {
 
     const pollIntervalMs = this.config.pollIntervalMs
 
+    // 轮询重试控制
+    let consecutiveErrors = 0
+    const MAX_CONSECUTIVE_ERRORS = 10
+    const ERROR_BACKOFF_MULTIPLIER = 2
+
     let pollCount = 0
     const pollLoop = (): void => {
       pollCount++
       const n = pollCount
       log(`[feishu] poll #${n} 开始`)
       this.pollOnce(onMessage)
-        .then(() => log(`[feishu] poll #${n} 完成`))
-        .catch(err => error(`[feishu] poll #${n} 错误: ${err}`))
+        .then(() => {
+          log(`[feishu] poll #${n} 完成`)
+          // 成功后重置错误计数
+          consecutiveErrors = 0
+        })
+        .catch(err => {
+          consecutiveErrors++
+          error(`[feishu] poll #${n} 错误 (连续错误 ${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${err}`)
+
+          // 超过最大连续错误次数，延迟更长时间
+          if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+            const backoffTime = pollIntervalMs * Math.pow(ERROR_BACKOFF_MULTIPLIER,
+              Math.min(consecutiveErrors - MAX_CONSECUTIVE_ERRORS + 1, 5))
+            error(`[feishu] 连续错误过多，延迟 ${backoffTime}ms 后重试`)
+            setTimeout(pollLoop, backoffTime)
+            return
+          }
+        })
         .finally(() => {
-          log(`[feishu] poll #${n} finally, 调度下一次`)
-          setTimeout(pollLoop, pollIntervalMs)
+          if (consecutiveErrors < MAX_CONSECUTIVE_ERRORS) {
+            log(`[feishu] poll #${n} finally, 调度下一次`)
+            setTimeout(pollLoop, pollIntervalMs)
+          }
         })
     }
 
-    log(`[feishu] 启动 REST 轮询 (tick ${pollIntervalMs}ms, per-chat 自适应退避 5/30/60/120s)`)
+    log(`[feishu] 启动 REST 轮询 (tick ${pollIntervalMs}ms, per-chat 自适应退避 5/30/60/120s, 最大连续错误 ${MAX_CONSECUTIVE_ERRORS})`)
     setTimeout(pollLoop, pollIntervalMs)
   }
 

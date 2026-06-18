@@ -7,7 +7,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFileSync } from 'node:child_process'
-import { loadConfig, getPidFile, getDaemonLockDir, loadWeChatAccount } from './config.js'
+import { loadConfig, getPidFile, getDaemonLockDir, loadWeChatAccount, getConfigFile, getWeChatAccountFile } from './config.js'
 import { isUserAllowed } from './security.js'
 import { isDuplicate, listActiveBindings, getBinding, archiveBinding } from './session.js'
 import { parseCommand, handleCommand, applyModelSelection, type ParsedCommand } from './commands.js'
@@ -25,7 +25,7 @@ import { stageFile, consumeStaged, ensureInbox, classifyFile, needsLegacyUpgrade
 import { upgradeOfficeLegacy } from './office-upgrader.js'
 import { buildAttachmentPrompt } from './attachment-prompt.js'
 import { buildRecapMessages } from './recap.js'
-import { log, error } from './logger.js'
+import { log, error, setTraceId, generateTraceId, sanitize } from './logger.js'
 import { tmuxExactTarget } from './tmux-util.js'
 import type { TransportAdapter, IncomingMessage, OutgoingMessage, TransportType } from './transport.js'
 import {
@@ -63,6 +63,9 @@ import {
   prepareDaemonProcessIdentity,
   readDaemonPidRecord,
 } from './daemon-process.js'
+import { RateLimiter, getRateLimiter, stopRateLimiter } from './rate-limiter.js'
+import { detectFileType, validateFileExtension } from './file-type-check.js'
+import { initConfigCache, stopConfigCache } from './config-cache.js'
 
 const DAEMON_ENTRY = daemonMainModulePath()
 
@@ -292,6 +295,20 @@ export async function startDaemon(): Promise<void> {
 
   log('cc 启动中...')
 
+  // 初始化配置缓存（性能优化）
+  initConfigCache(
+    getConfigFile(),
+    getWeChatAccountFile(),
+    loadConfig,
+    loadWeChatAccount,
+  )
+
+  // 清理钩子
+  process.on('exit', () => {
+    try { stopConfigCache() } catch {}
+    try { stopRateLimiter() } catch {}
+  })
+
   // AskUserQuestion 桥接 — 必须在 transport 启动前就绪，避免 hook 早期连接失败
   try {
     await startAskUserBridge()
@@ -347,10 +364,15 @@ export async function startDaemon(): Promise<void> {
   async function handleMessage(msg: IncomingMessage): Promise<void> {
     const { messageId, conversationId, senderId, transport } = msg
 
+    // 设置 trace ID 用于日志追踪
+    const traceId = generateTraceId()
+    setTraceId(traceId)
+
     const dedupKey = `${transport}:${conversationId}:${messageId}`
     log(`[dedup] 检查: msgId=${messageId.slice(0, 20)} key=${dedupKey.slice(0, 60)}`)
     if (isDuplicate(dedupKey)) {
       log(`[dedup] 重复消息已过滤: ${messageId.slice(0, 20)}`)
+      setTraceId(null)
       return
     }
     log(`[dedup] 新消息通过: ${messageId.slice(0, 20)}`)
@@ -361,6 +383,17 @@ export async function startDaemon(): Promise<void> {
 
     if (!isUserAllowed(senderId, config)) {
       log(`拒绝未授权用户: ${senderId}`)
+      setTraceId(null)
+      return
+    }
+
+    // 速率限制检查
+    const rateLimiter = getRateLimiter()
+    const rateCheck = rateLimiter.check(senderId)
+    if (!rateCheck.allowed) {
+      log(`[rate-limit] 用户 ${senderId} 触发速率限制`)
+      await sendToConversation(transport, conversationId, rateLimiter.formatBlockMessage(senderId))
+      setTraceId(null)
       return
     }
 
@@ -412,6 +445,15 @@ export async function startDaemon(): Promise<void> {
         const destPath = path.join(inbox, `${messageId}.${ext}`)
 
         await adapter.downloadMedia(messageId, msg.fileKey!, msg.msgType!, destPath)
+
+        // 安全增强：通过 magic bytes 验证文件真实类型
+        const fileValidation = validateFileExtension(destPath, ext)
+        if (!fileValidation.valid && fileValidation.detectedType !== 'text') {
+          log(`[file-security] 文件类型不匹配: 声明=${ext} 检测=${fileValidation.detectedType}`)
+          fs.unlinkSync(destPath)
+          await send(`⚠️ 安全警告：文件内容与扩展名不匹配。声明的类型是 .${ext}，但检测到的是 ${fileValidation.detectedType} 类型。`)
+          return
+        }
 
         // 检查文件大小是否超过限制
         const stats = fs.statSync(destPath)

@@ -206,9 +206,25 @@ export abstract class BaseToolDriver implements ToolDriver {
         cwd: opts.cwd,
         env: opts.env,
         stdio: ['ignore', 'pipe', 'pipe'],
+        // Unix 上创建进程组以便能 kill 整个组；Windows 上不使用 detached
         detached: process.platform !== 'win32',
         shell: process.platform === 'win32',
       })
+
+      // 确保子进程不会变成僵尸进程
+      // 在父进程退出时自动杀掉子进程（仅 Unix）
+      if (process.platform !== 'win32' && child.pid) {
+        // 子进程已经 detached，需要在父进程退出时显式 kill
+        const exitHandler = () => {
+          try {
+            if (child.pid) process.kill(-child.pid, 'SIGTERM')
+          } catch {}
+        }
+        process.on('exit', exitHandler)
+        child.once('exit', () => {
+          process.removeListener('exit', exitHandler)
+        })
+      }
 
       opts.onSpawn?.(child)
 
@@ -266,7 +282,23 @@ export abstract class BaseToolDriver implements ToolDriver {
         stdout = lines.pop() ?? ''
         for (const line of lines) {
           if (!line.trim()) continue
-          try { handleEvent(JSON.parse(line) as Record<string, unknown>) } catch {}
+          try {
+            const parsed = JSON.parse(line)
+            // 运行时类型验证：确保解析结果是对象
+            if (typeof parsed === 'object' && parsed !== null) {
+              handleEvent(parsed as Record<string, unknown>)
+            } else {
+              // 非 JSON 对象，作为纯文本处理
+              if (resultParts.length === 0 && turnTexts.length === 0) {
+                resultParts.push(line.trim())
+              }
+            }
+          } catch {
+            // JSON 解析失败，作为纯文本处理
+            if (line.trim() && resultParts.length === 0 && turnTexts.length === 0) {
+              resultParts.push(line.trim())
+            }
+          }
         }
       })
 
@@ -276,7 +308,14 @@ export abstract class BaseToolDriver implements ToolDriver {
       child.on('close', (code) => {
         // 处理残留 stdout
         if (stdout.trim()) {
-          try { handleEvent(JSON.parse(stdout) as Record<string, unknown>) } catch {
+          try {
+            const parsed = JSON.parse(stdout)
+            if (typeof parsed === 'object' && parsed !== null) {
+              handleEvent(parsed as Record<string, unknown>)
+            } else if (resultParts.length === 0 && turnTexts.length === 0) {
+              resultParts.push(stdout.trim())
+            }
+          } catch {
             // 非 JSON 输出，作为纯文本结果
             if (stdout.trim() && resultParts.length === 0 && turnTexts.length === 0) {
               resultParts.push(stdout.trim())

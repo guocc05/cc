@@ -240,6 +240,7 @@ export interface WeChatAccount {
 }
 
 export function getWeChatAccountFile(): string { return WECHAT_ACCOUNT_FILE }
+export function getConfigFile(): string { return CONFIG_FILE }
 
 export function loadWeChatAccount(): WeChatAccount | null {
   if (!fs.existsSync(WECHAT_ACCOUNT_FILE)) return null
